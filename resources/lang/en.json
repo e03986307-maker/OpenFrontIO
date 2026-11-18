@@ -205,8 +205,13 @@
   },
   "build_menu": {
     "desc": {
+      "aa_turret": "Shoots down enemy Airborne planes (13s cooldown); upgrades extend range",
+      "airfield": "Holds fighters (2 per level), builds 1 every 60s; unlocks Airborne",
       "atom_bomb": "Small explosion",
+      "bunker": "Reduces troop losses from bombing by 90%",
+      "bunker_buster": "Destroys all bunkers in a small radius",
       "city": "Increases max population",
+      "civil_airport": "Earns gold by air trade every 10s; more with other nations' airports. Upgradable",
       "defense_post": "Increases defenses of nearby borders",
       "factory": "Creates railroads and spawns trains",
       "hydrogen_bomb": "Large explosion",
@@ -214,6 +219,7 @@
       "missile_silo": "Used to launch nukes",
       "port": "Sends trade ships to generate gold",
       "sam_launcher": "Defends against incoming nukes",
+      "tank": "Moves to the front in wars; nearby attacks lose fewer troops and advance faster",
       "warship": "Captures trade ships, destroys ships and boats"
     },
     "not_enough_money": "Not enough money",
@@ -2221,6 +2227,136 @@
     "title_clanwars": "Clan Wars Ranked Matchmaking (ALPHA)",
     "waiting_for_game": "Waiting for game to start..."
   },
+  "mod_panel": {
+    "bomb_default": "Standard bomb",
+    "bomb_hint": "Each slot holds one bomb. Research a bomb, then equip it.",
+    "equip": "Equip",
+    "equipped": "Equipped",
+    "item": {
+      "air_cap": {
+        "desc": "Each level lets one Airborne sortie carry more soldiers.",
+        "name": "Airborne Capacity"
+      },
+      "bomb_boosted": {
+        "desc": "A stronger standard hydrogen bomb at higher cost. Hydrogen slot.",
+        "name": "Boosted Hydrogen Bomb"
+      },
+      "bomb_bunker_buster": {
+        "desc": "Destroys every bunker in a small radius. Fired from a missile silo for 40M.",
+        "name": "Bunker Buster"
+      },
+      "bomb_cluster": {
+        "desc": "Wide but shallow blast. Fewer kills, bigger area. Atom slot.",
+        "name": "Cluster Bomb"
+      },
+      "bomb_dirty": {
+        "desc": "Large contaminated area, weak against troops. Hydrogen slot.",
+        "name": "Dirty Bomb"
+      },
+      "bomb_emp": {
+        "desc": "Wrecks buildings but barely hurts troops. Atom slot.",
+        "name": "EMP Bomb"
+      },
+      "bomb_fuel_air": {
+        "desc": "Broad blast, harsh on troops. Hydrogen slot.",
+        "name": "Fuel-Air Bomb"
+      },
+      "bomb_mirv_precise": {
+        "desc": "Tight, deep warhead blasts. MIRV slot.",
+        "name": "Precision Warheads"
+      },
+      "bomb_mirv_wide": {
+        "desc": "Wide, shallow warhead blasts. MIRV slot.",
+        "name": "Wide-Area Warheads"
+      },
+      "bomb_neutron": {
+        "desc": "Kills troops, leaves buildings standing. Atom slot.",
+        "name": "Neutron Bomb"
+      },
+      "bomb_tactical": {
+        "desc": "Small and cheap. Half price. Atom slot.",
+        "name": "Tactical Nuke"
+      },
+      "bomb_thermobaric": {
+        "desc": "Deadly to troops but a smaller radius. Atom slot.",
+        "name": "Thermobaric Bomb"
+      },
+      "bomb_tsar": {
+        "desc": "The biggest blast ever built. Costs triple. Hydrogen slot.",
+        "name": "Tsar Bomba"
+      },
+      "tank_tech": {
+        "desc": "Each level makes your tanks stronger: fewer troop losses and faster advances nearby.",
+        "name": "Tank Research"
+      },
+      "troop_atk": {
+        "desc": "Each level: +10% attack. Enemies lose more troops and you advance faster.",
+        "name": "Troop Attack"
+      },
+      "troop_def": {
+        "desc": "Each level: +10% defense. Attackers lose more troops and advance slower.",
+        "name": "Troop Defense"
+      },
+      "troop_hp": {
+        "desc": "Each level: +10% hardiness. Your troops die less in battle.",
+        "name": "Troop Health"
+      },
+      "weapon_assault_rifle": {
+        "desc": "Standard-issue rifles for every soldier.",
+        "name": "Assault Rifle"
+      },
+      "weapon_atgm": {
+        "desc": "Precision-guided anti-armor and anti-personnel missiles.",
+        "name": "Guided Missiles"
+      },
+      "weapon_howitzer": {
+        "desc": "Self-propelled artillery pounding enemy lines.",
+        "name": "Howitzer"
+      },
+      "weapon_machine_gun": {
+        "desc": "Suppressive fire that cuts down advancing enemies.",
+        "name": "Machine Gun"
+      },
+      "weapon_mortar": {
+        "desc": "Cheap indirect fire behind the front line.",
+        "name": "Mortar"
+      },
+      "weapon_railgun": {
+        "desc": "Experimental electromagnetic cannons. The strongest weapon.",
+        "name": "Railgun"
+      },
+      "weapon_rocket_launcher": {
+        "desc": "Heavy shoulder-fired rockets against defenders.",
+        "name": "Rocket Launcher"
+      },
+      "weapon_sniper_rifle": {
+        "desc": "Precise long-range kills on enemy troops.",
+        "name": "Sniper Rifle"
+      }
+    },
+    "maxed": "Max level",
+    "owned": "Researched",
+    "price": "Price",
+    "radius": "Radius",
+    "research": "Research",
+    "slot": {
+      "abomb": "Atom bomb slot",
+      "hbomb": "Hydrogen bomb slot",
+      "mirv": "MIRV slot",
+      "special": "Special"
+    },
+    "spares_buildings": "spares buildings",
+    "stat_atk": "Attack",
+    "stat_def": "Defense",
+    "stat_hp": "Health",
+    "tab_bomb": "Bombs",
+    "tab_supply": "Supplies",
+    "tab_troop": "Troops",
+    "tab_weapon": "Weapons",
+    "title": "Upgrades",
+    "troop_dmg": "Troop damage",
+    "upgrade": "Upgrade"
+  },
   "mode_selector": {
     "lobbies_unreachable": "Can't reach the public lobbies right now",
     "offline_lobbies": "Public lobbies aren't available while you're offline",
@@ -3195,9 +3331,14 @@
     "title": "Tutorial"
   },
   "unit_type": {
+    "aa_turret": "AA Turret",
+    "airfield": "Skyport",
     "atom_bomb": "Atom Bomb",
     "boat": "Boat",
+    "bunker": "Bunker",
+    "bunker_buster": "Bunker Buster",
     "city": "City",
+    "civil_airport": "Civil Airport",
     "defense_post": "Defense Post",
     "factory": "Factory",
     "hydrogen_bomb": "Hydrogen Bomb",
@@ -3205,6 +3346,7 @@
     "missile_silo": "Missile Silo",
     "port": "Port",
     "sam_launcher": "SAM Launcher",
+    "tank": "Tank",
     "warship": "Warship"
   },
   "update_available": {

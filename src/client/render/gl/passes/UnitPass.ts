@@ -44,6 +44,7 @@ import {
   UT_MIRV_WARHEAD,
   UT_SAM_MISSILE,
   UT_SHELL,
+  UT_TANK,
   UT_TRADE_SHIP,
   UT_TRAIN,
   UT_TRANSPORT,
@@ -85,6 +86,7 @@ const UNIT_ORDER = [
   "TrainEngine",
   "TrainCarriage",
   "TrainCarriageLoaded",
+  UT_TANK, // 모드: 탱크 (큰 점)
 ] as const;
 
 const ATLAS_COLS = UNIT_ORDER.length;

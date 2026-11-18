@@ -196,7 +196,10 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
       if (Object.keys(overrides).length > 0) return; // checked once, on FFA
       // Runs during the spawn phase and finishes inside init, so it is never
       // alive at a tick boundary. BasicExecutions.test.ts covers it directly.
-      const neverStored = new Set(["Pause"]);
+      // 모드 추가 실행: 국가 AI가 아직 쓰지 않아 기준 게임에 나오지 않음
+      // (tests/AirPowerMod.test.ts에서 직접 검증). AI 연결 후 이 목록에서 빼야 함.
+      const modOnly = ["Bunker", "Airfield", "AATurret", "Airlift", "Tank", "ModUpgrade", "ModEquip", "CivilAirport"];
+      const neverStored = new Set(["Pause", ...modOnly]);
       const missing = EXECUTION_SNAPSHOT_TYPES.map((t) => t.name).filter(
         (name) => !reference.execTypes.has(name) && !neverStored.has(name),
       );

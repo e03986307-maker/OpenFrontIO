@@ -2,20 +2,22 @@ import { zb, ZbEncodeError } from "@openfront/zbin";
 import { z } from "zod";
 import { UnitType } from "./game/GameTypes";
 
-export const bombUnits = ["abomb", "hbomb", "mirv", "mirvw"] as const;
+export const bombUnits = ["abomb", "hbomb", "mirv", "mirvw", "bbust"] as const;
 export const BombUnitSchema = z.enum(bombUnits);
 export type BombUnit = z.infer<typeof BombUnitSchema>;
 export type NukeType =
   | UnitType.AtomBomb
   | UnitType.HydrogenBomb
   | UnitType.MIRV
-  | UnitType.MIRVWarhead;
+  | UnitType.MIRVWarhead
+  | UnitType.BunkerBuster;
 
 export const unitTypeToBombUnit = {
   [UnitType.AtomBomb]: "abomb",
   [UnitType.HydrogenBomb]: "hbomb",
   [UnitType.MIRV]: "mirv",
   [UnitType.MIRVWarhead]: "mirvw",
+  [UnitType.BunkerBuster]: "bbust",
 } as const satisfies Record<NukeType, BombUnit>;
 
 export const boatUnits = ["trade", "trans"] as const;
@@ -36,6 +38,11 @@ export const otherUnits = [
   "silo",
   "saml",
   "fact",
+  "bunk",
+  "airf",
+  "aatr",
+  "tank",
+  "capt",
 ] as const;
 export const OtherUnitSchema = z.enum(otherUnits);
 export type OtherUnit = z.infer<typeof OtherUnitSchema>;
@@ -46,7 +53,12 @@ export type OtherUnitType =
   | UnitType.Port
   | UnitType.SAMLauncher
   | UnitType.Warship
-  | UnitType.Factory;
+  | UnitType.Factory
+  | UnitType.Bunker
+  | UnitType.Airfield
+  | UnitType.AATurret
+  | UnitType.Tank
+  | UnitType.CivilAirport;
 
 export const unitTypeToOtherUnit = {
   [UnitType.City]: "city",
@@ -56,6 +68,11 @@ export const unitTypeToOtherUnit = {
   [UnitType.SAMLauncher]: "saml",
   [UnitType.Warship]: "wshp",
   [UnitType.Factory]: "fact",
+  [UnitType.Bunker]: "bunk",
+  [UnitType.Airfield]: "airf",
+  [UnitType.AATurret]: "aatr",
+  [UnitType.Tank]: "tank",
+  [UnitType.CivilAirport]: "capt",
 } as const satisfies Record<OtherUnitType, OtherUnit>;
 
 // Attacks

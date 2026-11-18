@@ -138,7 +138,17 @@ describe("mobile UnitDisplay layout", () => {
       await display.updateComplete;
 
       const grid = display.querySelector<HTMLElement>(".unit-display-grid");
-      expect(grid?.children).toHaveLength(BuildMenus.types.length - 1);
+      // 모드로 추가한 건물/폭탄은 단축바가 아니라 건설 메뉴(BuildMenu)로만 연다.
+      const modOnly = [
+        UnitType.Bunker,
+        UnitType.Airfield,
+        UnitType.AATurret,
+        UnitType.BunkerBuster,
+      ];
+      const hotbarTypes = BuildMenus.types.filter(
+        (t) => !(modOnly as UnitType[]).includes(t),
+      );
+      expect(grid?.children).toHaveLength(hotbarTypes.length - 1);
     } finally {
       display.remove();
     }

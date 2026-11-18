@@ -54,6 +54,7 @@ export {
   UT_SHELL,
   UT_TRADE_SHIP,
   UT_TRAIN,
+  UT_TANK,
   UT_TRANSPORT,
   UT_WARSHIP,
 } from "./UnitType";

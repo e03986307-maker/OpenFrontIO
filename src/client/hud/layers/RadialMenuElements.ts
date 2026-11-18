@@ -126,6 +126,7 @@ export const COLORS = {
 export enum Slot {
   Info = "info",
   Boat = "boat",
+  Airlift = "airlift",
   Build = "build",
   Attack = "attack",
   Ally = "ally",
@@ -731,6 +732,23 @@ const boatMenuElement: MenuElement = {
   },
 };
 
+// 에어본(병사 수송기): 스카이포트가 있어야 사용 가능, 출격당 3M
+const airliftMenuElement: MenuElement = {
+  id: Slot.Airlift,
+  name: "airlift",
+  disabled: (params: MenuElementParams) =>
+    !params.game.isLand(params.tile) ||
+    params.myPlayer.totalUnitLevels(UnitType.Airfield) === 0,
+  icon: boatIcon,
+  color: COLORS.boat,
+
+  action: async (params: MenuElementParams) => {
+    params.playerActionHandler.handleAirlift(params.myPlayer, params.tile);
+
+    params.closeMenu();
+  },
+};
+
 export const centerButtonElement: CenterButtonElement = {
   disabled: (params: MenuElementParams): boolean => {
     const tileOwner = params.game.owner(params.tile);
@@ -814,6 +832,7 @@ export const rootMenuElement: MenuElement = {
         ? [deleteUnitElement, allyRequestElement, buildMenuElement]
         : [
             isAllied && !isDisconnected ? allyBreakElement : boatMenuElement,
+            isAllied && !isDisconnected ? null : airliftMenuElement,
             inExtensionWindow ? allyExtendElement : allyRequestElement,
             showDonateInsteadOfAttack
               ? donateGoldRadialElement

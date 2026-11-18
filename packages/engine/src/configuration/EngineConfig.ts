@@ -1,4 +1,8 @@
 import {
+  BombSlot,
+  equippedVariant,
+} from "@openfront/engine-api/game/ModCatalog";
+import {
   Difficulty,
   GameType,
   Gold,
@@ -52,6 +56,18 @@ export interface AttackLogicResult {
    * means about ten such tiles per tick.
    */
   tickFraction: number;
+}
+
+/** 장착한 폭탄 변형이 있으면 가격에 배율을 곱한다. */
+function variantPrice(
+  slot: BombSlot,
+  base: (game: Game, player: Player) => Gold,
+): (game: Game, player: Player) => Gold {
+  return (game, player) => {
+    const cost = base(game, player);
+    const v = equippedVariant(slot, (k) => player.modLevel(k));
+    return v === null ? cost : BigInt(Math.floor(Number(cost) * v.priceMul));
+  };
 }
 
 // attackLogic tunables
@@ -358,11 +374,20 @@ export class EngineConfig extends Config {
           UnitType.Factory,
         );
       case UnitType.AtomBomb:
-        return this.costWrapper(() => 750_000, UnitType.AtomBomb);
+        return variantPrice(
+          "abomb",
+          this.costWrapper(() => 750_000, UnitType.AtomBomb),
+        );
+      case UnitType.BunkerBuster:
+        // 벙커 부스터: 가격 40M 고정
+        return this.costWrapper(() => 40_000_000, UnitType.BunkerBuster);
       case UnitType.HydrogenBomb:
-        return this.costWrapper(() => 5_000_000, UnitType.HydrogenBomb);
+        return variantPrice(
+          "hbomb",
+          this.costWrapper(() => 5_000_000, UnitType.HydrogenBomb),
+        );
       case UnitType.MIRV:
-        return (game: Game, player: Player) => {
+        return variantPrice("mirv", (game: Game, player: Player) => {
           if (
             player.type() === PlayerType.Human &&
             this.hasInfiniteGoldFor(player)
@@ -370,7 +395,7 @@ export class EngineConfig extends Config {
             return 0n;
           }
           return 25_000_000n + BigInt(game.mirvsLaunched()) * 15_000_000n;
-        };
+        });
       case UnitType.MissileSilo:
         return this.costWrapper(() => 1_000_000, UnitType.MissileSilo);
       case UnitType.DefensePost:
@@ -378,6 +403,21 @@ export class EngineConfig extends Config {
           (numUnits: number) => Math.min(250_000, (numUnits + 1) * 50_000),
           UnitType.DefensePost,
         );
+      case UnitType.CivilAirport:
+        // 민간 공항: 가격 5M 고정 (업그레이드도 같은 가격)
+        return this.costWrapper(() => 5_000_000, UnitType.CivilAirport);
+      case UnitType.Tank:
+        // 탱크: 가격 15M 고정
+        return this.costWrapper(() => 15_000_000, UnitType.Tank);
+      case UnitType.AATurret:
+        // 대공 터렛: 가격 7M 고정
+        return this.costWrapper(() => 7_000_000, UnitType.AATurret);
+      case UnitType.Airfield:
+        // 스카이포트: 가격 10M 고정 (개수가 늘어도 안 오름)
+        return this.costWrapper(() => 10_000_000, UnitType.Airfield);
+      case UnitType.Bunker:
+        // 벙커: 가격 20M 고정
+        return this.costWrapper(() => 20_000_000, UnitType.Bunker);
       case UnitType.SAMLauncher:
         return this.costWrapper(
           (numUnits: number) => Math.min(3_000_000, (numUnits + 1) * 1_500_000),
@@ -687,6 +727,7 @@ export class EngineConfig extends Config {
     switch (unitType) {
       case UnitType.AtomBomb:
       case UnitType.HydrogenBomb:
+      case UnitType.BunkerBuster:
         return 10;
       case UnitType.MIRV:
         return 15;

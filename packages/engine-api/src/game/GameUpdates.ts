@@ -288,6 +288,8 @@ export interface PlayerUpdate {
   betrayals?: number;
   lastDeleteUnitTick?: Tick;
   isLobbyCreator?: boolean;
+  /** 모드 업그레이드/연구 단계 (ModCatalog 항목 순서) */
+  modLevels?: readonly number[];
 }
 
 export interface AllianceView {

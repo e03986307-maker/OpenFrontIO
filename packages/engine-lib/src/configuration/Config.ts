@@ -232,6 +232,28 @@ export class Config {
       case UnitType.DefensePost:
         info = { constructionDuration: this.instantBuild() ? 0 : 5 * 10 };
         break;
+      case UnitType.Tank:
+        // 탱크 배치 시간 5초
+        info = { constructionDuration: this.instantBuild() ? 0 : 5 * 10 };
+        break;
+      case UnitType.CivilAirport:
+      case UnitType.AATurret:
+        info = {
+          constructionDuration: this.instantBuild() ? 0 : 5 * 10,
+          upgradable: true,
+        };
+        break;
+      case UnitType.Airfield:
+        // 설치 시간은 기본 건물과 동일 (5초)
+        info = {
+          constructionDuration: this.instantBuild() ? 0 : 5 * 10,
+          upgradable: true,
+        };
+        break;
+      case UnitType.Bunker:
+        // 설치 시간 10초 (10 ticks/sec)
+        info = { constructionDuration: this.instantBuild() ? 0 : 10 * 10 };
+        break;
       case UnitType.SAMLauncher:
         info = {
           constructionDuration: this.instantBuild()
@@ -253,6 +275,7 @@ export class Config {
       case UnitType.HydrogenBomb:
       case UnitType.MIRV:
       case UnitType.MIRVWarhead:
+      case UnitType.BunkerBuster:
       case UnitType.TradeShip:
       case UnitType.Train:
         info = {};
@@ -427,6 +450,9 @@ export class Config {
         return { inner: 12, outer: 30 };
       case UnitType.HydrogenBomb:
         return { inner: 80, outer: 100 };
+      case UnitType.BunkerBuster:
+        // 좁은 범위의 정밀 폭발물: 범위 안의 벙커를 모두 파괴
+        return { inner: 5, outer: 10 };
     }
     throw new Error(`Unknown nuke type: ${unitType}`);
   }

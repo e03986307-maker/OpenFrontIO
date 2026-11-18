@@ -1,3 +1,10 @@
+import {
+  bestWeaponMultiplier,
+  tankLossFactor,
+  tankSpeedFactor,
+  troopUpgradeMultiplier,
+} from "@openfront/engine-api/game/ModCatalog";
+import { TANK_SUPPORT_RANGE } from "./TankExecution";
 import { GameMap, TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   Difficulty,
@@ -343,11 +350,44 @@ export class AttackExecution implements Execution {
         continue;
       }
       this.addNeighbors(tileToConquer);
-      const { attackerTroopLoss, defenderTroopLoss, tickFraction } = this.mg
+      const logic = this.mg
         .config()
         .attackLogic(
           this.attackLogicInput(troopCount, tileToConquer, borderSize),
         );
+      // 탱크 지원: 근처에 아군 탱크가 있으면 병력 손실 40% 감소, 점령 속도 30% 증가
+      const hasTank = this.mg.hasUnitNearby(
+        tileToConquer,
+        TANK_SUPPORT_RANGE,
+        UnitType.Tank,
+        this._owner.id(),
+      );
+      // 병사 업그레이드 (체력/공격력/방어력, 단계마다 +10%)
+      const atkMul =
+        troopUpgradeMultiplier(this._owner.modLevel("troop_atk")) *
+        bestWeaponMultiplier((k) => this._owner.modLevel(k));
+      const tankTech = this._owner.modLevel("tank_tech");
+      const hpMul = troopUpgradeMultiplier(this._owner.modLevel("troop_hp"));
+      const defender = this.target.isPlayer() ? this.target : null;
+      const defMul = defender
+        ? troopUpgradeMultiplier(defender.modLevel("troop_def"))
+        : 1;
+      const defHpMul = defender
+        ? troopUpgradeMultiplier(defender.modLevel("troop_hp"))
+        : 1;
+      const attackerTroopLoss =
+        ((hasTank
+          ? logic.attackerTroopLoss * tankLossFactor(tankTech)
+          : logic.attackerTroopLoss) *
+          defMul) /
+        hpMul;
+      const tickFraction =
+        ((hasTank
+          ? logic.tickFraction * tankSpeedFactor(tankTech)
+          : logic.tickFraction) *
+          defMul) /
+        atkMul;
+      const defenderTroopLoss = (logic.defenderTroopLoss * atkMul) / defHpMul;
       tickBudget -= tickFraction;
       troopCount -= attackerTroopLoss;
       this.attack.setTroops(troopCount);

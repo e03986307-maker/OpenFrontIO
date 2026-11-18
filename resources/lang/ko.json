@@ -183,7 +183,13 @@
       "missile_silo": "핵 미사일 발사를 위해 사용됩니다",
       "port": "무역선을 보내 금을 생산합니다",
       "sam_launcher": "들어오는 핵미사일을 방어합니다",
-      "warship": "무역선을 나포하고, 수송선과 함선을 파괴합니다"
+      "warship": "무역선을 나포하고, 수송선과 함선을 파괴합니다",
+      "bunker": "폭격으로 인한 병력 손실을 90% 줄여줘요",
+      "airfield": "전투기를 보관(레벨당 2대)하고 60초마다 1대 생산. 에어본을 쓰려면 필요해요",
+      "aa_turret": "적 에어본을 격추해요 (쿨타임 13초). 업그레이드하면 범위가 넓어져요",
+      "bunker_buster": "작은 범위의 벙커를 모두 철거해요",
+      "tank": "전쟁이 나면 전선으로 이동해요. 근처 전투에서 병력 손실이 줄고 더 빨리 전진해요",
+      "civil_airport": "10초마다 비행기 무역으로 돈을 벌어요. 다른 나라 공항이 있으면 더 벌어요. 업그레이드 가능"
     },
     "not_enough_money": "돈이 부족합니다",
     "upgrade_amount": "x{amount}",
@@ -1839,6 +1845,136 @@
     "delete_unit_title": "유닛 삭제",
     "upgrade_x": "업그레이드 x{amount}"
   },
+  "mod_panel": {
+    "title": "업그레이드",
+    "tab_troop": "병사 강화",
+    "tab_weapon": "무기",
+    "tab_supply": "군수",
+    "tab_bomb": "폭탄",
+    "upgrade": "업그레이드",
+    "research": "연구",
+    "maxed": "최대 단계",
+    "owned": "연구 완료",
+    "equip": "장착",
+    "equipped": "장착 중",
+    "stat_atk": "공격력",
+    "stat_hp": "체력",
+    "stat_def": "방어력",
+    "radius": "반경",
+    "troop_dmg": "병력 피해",
+    "price": "가격",
+    "spares_buildings": "건물 보존",
+    "bomb_default": "기본 폭탄",
+    "bomb_hint": "슬롯은 3개뿐이에요. 폭탄을 연구한 뒤 슬롯에 장착해서 써요.",
+    "slot": {
+      "abomb": "원자폭탄 슬롯",
+      "hbomb": "수소폭탄 슬롯",
+      "mirv": "다탄두 미사일 슬롯",
+      "special": "특수"
+    },
+    "item": {
+      "troop_hp": {
+        "name": "병사 체력",
+        "desc": "단계마다 체력 +10%. 전투에서 우리 병사가 덜 죽어요."
+      },
+      "troop_atk": {
+        "name": "병사 공격력",
+        "desc": "단계마다 공격력 +10%. 적이 더 많이 죽고 더 빨리 전진해요."
+      },
+      "troop_def": {
+        "name": "병사 방어력",
+        "desc": "단계마다 방어력 +10%. 공격자가 더 많이 죽고 더 느리게 전진해요."
+      },
+      "weapon_assault_rifle": {
+        "name": "돌격소총",
+        "desc": "모든 병사에게 지급하는 기본 소총."
+      },
+      "weapon_machine_gun": {
+        "name": "기관총",
+        "desc": "돌격하는 적을 제압하는 연속 사격."
+      },
+      "weapon_sniper_rifle": {
+        "name": "저격소총",
+        "desc": "먼 거리에서 적 병사를 정확히 저격."
+      },
+      "weapon_mortar": {
+        "name": "박격포",
+        "desc": "전선 뒤에서 쏘는 값싼 곡사 화력."
+      },
+      "weapon_rocket_launcher": {
+        "name": "로켓포",
+        "desc": "수비 병력을 부수는 휴대용 로켓."
+      },
+      "weapon_howitzer": {
+        "name": "자주포",
+        "desc": "적 진지를 두드리는 자주 곡사포."
+      },
+      "weapon_atgm": {
+        "name": "유도 미사일",
+        "desc": "정밀 유도되는 대전차·대인 미사일."
+      },
+      "weapon_railgun": {
+        "name": "레일건",
+        "desc": "실험용 전자기 포. 가장 강한 무기."
+      },
+      "tank_tech": {
+        "name": "탱크 연구",
+        "desc": "단계마다 탱크가 좋아져요. 근처 전투에서 병력 손실이 더 줄고 더 빨리 전진해요."
+      },
+      "air_cap": {
+        "name": "수송기 적재량",
+        "desc": "단계마다 에어본이 한 번에 더 많은 병사를 실어요."
+      },
+      "bomb_cluster": {
+        "name": "클러스터탄",
+        "desc": "넓지만 얕은 폭발. 피해는 적고 범위는 넓음. (원자폭탄 슬롯)"
+      },
+      "bomb_thermobaric": {
+        "name": "열압력탄",
+        "desc": "병력에 치명적이지만 범위가 좁음. (원자폭탄 슬롯)"
+      },
+      "bomb_tactical": {
+        "name": "전술핵",
+        "desc": "작고 값쌈. 가격 절반. (원자폭탄 슬롯)"
+      },
+      "bomb_neutron": {
+        "name": "중성자탄",
+        "desc": "병력만 죽이고 건물은 그대로 둠. (원자폭탄 슬롯)"
+      },
+      "bomb_emp": {
+        "name": "EMP탄",
+        "desc": "건물은 부수지만 병력 피해는 거의 없음. (원자폭탄 슬롯)"
+      },
+      "bomb_tsar": {
+        "name": "차르봄바",
+        "desc": "역대 최대 폭발. 가격은 3배. (수소폭탄 슬롯)"
+      },
+      "bomb_dirty": {
+        "name": "방사능탄",
+        "desc": "넓게 오염시키지만 병력 피해는 약함. (수소폭탄 슬롯)"
+      },
+      "bomb_fuel_air": {
+        "name": "연료기화탄",
+        "desc": "넓은 폭발, 병력에 가혹함. (수소폭탄 슬롯)"
+      },
+      "bomb_boosted": {
+        "name": "개량형 수소폭탄",
+        "desc": "표준 수소폭탄의 강화판. 값이 비쌈. (수소폭탄 슬롯)"
+      },
+      "bomb_mirv_precise": {
+        "name": "정밀 다탄두",
+        "desc": "좁고 깊게 터지는 탄두. (다탄두 슬롯)"
+      },
+      "bomb_mirv_wide": {
+        "name": "광역 다탄두",
+        "desc": "넓고 얕게 터지는 탄두. (다탄두 슬롯)"
+      },
+      "bomb_bunker_buster": {
+        "name": "벙커 부스터",
+        "desc": "작은 범위의 벙커를 모두 철거해요. 미사일 발사대에서 40M에 발사."
+      }
+    }
+  },
   "relation": {
     "default": "기본",
     "distrustful": "신뢰하지 않음",
@@ -2196,7 +2332,13 @@
     "missile_silo": "미사일 발사대",
     "port": "항구",
     "sam_launcher": "지대공 미사일 발사대",
-    "warship": "군함"
+    "warship": "군함",
+    "bunker": "벙커",
+    "airfield": "스카이포트",
+    "aa_turret": "대공 터렛",
+    "bunker_buster": "벙커 부스터",
+    "tank": "탱크",
+    "civil_airport": "민간 공항"
   },
   "update_available": {
     "desktop": "OpenFront의 새로운 버전을 이용할 수 있습니다. 백그라운드에서 다운로드되며, 준비가 완료되면 업데이트 표시줄에서 새로고침하세요.",

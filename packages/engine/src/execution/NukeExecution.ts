@@ -1,3 +1,9 @@
+import {
+  BombSlot,
+  BombVariant,
+  equippedVariant,
+} from "@openfront/engine-api/game/ModCatalog";
+import { NukeMagnitude } from "@openfront/engine-lib/configuration/Config";
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   MessageType,
@@ -77,7 +83,7 @@ export class NukeExecution implements Execution {
     if (this.nuke === null) {
       throw new Error("Not initialized");
     }
-    const magnitude = this.mg.config().nukeMagnitudes(this.nuke.type());
+    const magnitude = this.magnitude();
     const rand = new PseudoRandom(this.mg.ticks());
     const inner2 = magnitude.inner * magnitude.inner;
     const outer2 = magnitude.outer * magnitude.outer;
@@ -157,7 +163,7 @@ export class NukeExecution implements Execution {
       return;
     }
 
-    const magnitude = this.mg.config().nukeMagnitudes(this.nuke.type());
+    const magnitude = this.magnitude();
 
     const playersToBreakAllianceWith = listNukeBreakAlliance({
       game: this.mg,
@@ -364,15 +370,60 @@ export class NukeExecution implements Execution {
     );
   }
 
+  /** 이 폭탄이 들어가는 슬롯에 장착된 변형 (기본 폭탄이면 null) */
+  private variant(): BombVariant | null {
+    let slot: BombSlot;
+    switch (this.nukeType) {
+      case UnitType.AtomBomb:
+        slot = "abomb";
+        break;
+      case UnitType.HydrogenBomb:
+        slot = "hbomb";
+        break;
+      case UnitType.MIRVWarhead:
+        slot = "mirv";
+        break;
+      default:
+        return null;
+    }
+    return equippedVariant(slot, (k) => this.player.modLevel(k));
+  }
+
+  /** 기본 폭발 반경에 장착한 변형의 배율을 적용한다. */
+  private magnitude(): NukeMagnitude {
+    const base = this.mg.config().nukeMagnitudes(this.nuke!.type());
+    const v = this.variant();
+    if (v === null) return base;
+    return {
+      inner: base.inner * v.innerMul,
+      outer: base.outer * v.outerMul,
+    };
+  }
+
   private detonate() {
     if (this.nuke === null) {
       throw new Error("Not initialized");
     }
 
     const mg = this.mg;
+
+    // 벙커 부스터: 범위 안의 벙커만 철거하고 땅과 병력에는 피해를 주지 않는다.
+    if (this.nukeType === UnitType.BunkerBuster) {
+      const radius = this.mg.config().nukeMagnitudes(this.nuke.type()).outer;
+      for (const unit of mg.units(UnitType.Bunker)) {
+        if (mg.euclideanDistSquared(this.dst, unit.tile()) < radius * radius) {
+          const friendly = this.player.isFriendly(unit.owner(), true);
+          unit.delete(true, friendly ? undefined : this.player);
+        }
+      }
+      this.active = false;
+      this.nuke.setReachedTarget();
+      this.nuke.delete(false);
+      return;
+    }
     const config = mg.config();
 
-    const magnitude = config.nukeMagnitudes(this.nuke.type());
+    const magnitude = this.magnitude();
     const toDestroy = this.tilesToDestroy();
 
     // Retrieve all impacted players and the number of tiles
@@ -403,36 +454,49 @@ export class NukeExecution implements Execution {
       }
       const outgoingAttacks = player.outgoingAttacks();
       const maxTroops = config.maxTroops(player);
+      // 벙커: 완성된 벙커가 하나라도 있으면 폭격으로 인한 병력 손실 90% 감소 (중복 적용 안 됨)
+      const bunkerFactor =
+        (this.variant()?.troopMul ?? 1) * // 폭탄 변형의 병력 피해 배율
+        (player
+          .units(UnitType.Bunker)
+          .some((b) => b.isActive() && !b.isUnderConstruction())
+          ? 0.1
+          : 1);
       // nukeDeathFactor could compute the complete fallout in a single call instead
       for (let i = 0; i < numImpactedTiles; i++) {
         // Diminishing effect as each affected tile has been nuked
         const numTilesLeft = tilesBeforeNuke - i;
         player.removeTroops(
-          config.nukeDeathFactor(
-            this.nukeType,
-            player.troops(),
-            numTilesLeft,
-            maxTroops,
-          ),
+          bunkerFactor *
+            config.nukeDeathFactor(
+              this.nukeType,
+              player.troops(),
+              numTilesLeft,
+              maxTroops,
+            ),
         );
         for (const attack of outgoingAttacks) {
           const attackTroops = attack.troops();
-          const deaths = config.nukeDeathFactor(
-            this.nukeType,
-            attackTroops,
-            numTilesLeft,
-            maxTroops,
-          );
+          const deaths =
+            bunkerFactor *
+            config.nukeDeathFactor(
+              this.nukeType,
+              attackTroops,
+              numTilesLeft,
+              maxTroops,
+            );
           attack.setTroops(attackTroops - deaths);
         }
         for (const unit of transportShips) {
           const unitTroops = transportShipTroops.get(unit) ?? unit.troops();
-          const deaths = config.nukeDeathFactor(
-            this.nukeType,
-            unitTroops,
-            numTilesLeft,
-            maxTroops,
-          );
+          const deaths =
+            bunkerFactor *
+            config.nukeDeathFactor(
+              this.nukeType,
+              unitTroops,
+              numTilesLeft,
+              maxTroops,
+            );
           transportShipTroops.set(unit, Math.max(0, unitTroops - deaths));
         }
       }
@@ -443,13 +507,16 @@ export class NukeExecution implements Execution {
 
     const outer2 = magnitude.outer * magnitude.outer;
     const dst = this.dst;
+    const sparesStructures = this.variant()?.destroysStructures === false;
     for (const unit of mg.units()) {
       const type = unit.type();
+      if (sparesStructures && Structures.has(type)) continue; // 중성자탄
       if (
         type === UnitType.AtomBomb ||
         type === UnitType.HydrogenBomb ||
         type === UnitType.MIRVWarhead ||
         type === UnitType.MIRV ||
+        type === UnitType.BunkerBuster ||
         type === UnitType.SAMMissile
       ) {
         continue;
