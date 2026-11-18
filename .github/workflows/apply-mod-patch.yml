@@ -31,3 +31,5 @@ jobs:
         run: npx vitest run tests/AirPowerMod.test.ts tests/core/snapshot/FullGameSnapshot.test.ts
       - name: Lint
         run: npm run lint
+      - name: Production build
+        run: npm run build-prod
