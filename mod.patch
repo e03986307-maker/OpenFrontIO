@@ -1,0 +1,4190 @@
+diff --git a/index.html b/index.html
+index 988f2f7..5f328f5 100644
+--- a/index.html
++++ b/index.html
+@@ -647,6 +647,7 @@
+         <game-right-sidebar></game-right-sidebar>
+         <replay-panel></replay-panel>
+       </div>
++      <mod-panel></mod-panel>
+     </div>
+     <settings-modal></settings-modal>
+     <!-- The in-game settings modal: the same component as #page-settings, but
+diff --git a/packages/engine-api/src/Schemas.ts b/packages/engine-api/src/Schemas.ts
+index 5332748..27cd62e 100644
+--- a/packages/engine-api/src/Schemas.ts
++++ b/packages/engine-api/src/Schemas.ts
+@@ -26,6 +26,9 @@ export type Intent =
+   | AttackIntent
+   | CancelAttackIntent
+   | BoatAttackIntent
++  | AirliftIntent
++  | ModUpgradeIntent
++  | ModEquipIntent
+   | CancelBoatIntent
+   | AllianceRequestIntent
+   | AllianceRejectIntent
+@@ -52,6 +55,9 @@ export type AttackIntent = z.infer<typeof AttackIntentSchema>;
+ export type CancelAttackIntent = z.infer<typeof CancelAttackIntentSchema>;
+ export type SpawnIntent = z.infer<typeof SpawnIntentSchema>;
+ export type BoatAttackIntent = z.infer<typeof BoatAttackIntentSchema>;
++export type AirliftIntent = z.infer<typeof AirliftIntentSchema>;
++export type ModUpgradeIntent = z.infer<typeof ModUpgradeIntentSchema>;
++export type ModEquipIntent = z.infer<typeof ModEquipIntentSchema>;
+ export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
+ export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
+ export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
+@@ -439,6 +445,23 @@ export const BoatAttackIntentSchema = z.object({
+   dst: zb.uint(),
+ });
+ 
++export const ModEquipIntentSchema = z.object({
++  type: z.literal("modEquip"),
++  slot: z.string().max(10),
++  variant: zb.uint(),
++});
++
++export const ModUpgradeIntentSchema = z.object({
++  type: z.literal("modUpgrade"),
++  key: z.string().max(40),
++});
++
++export const AirliftIntentSchema = z.object({
++  type: z.literal("airlift"),
++  troops: zb.float({ min: 0 }),
++  dst: zb.uint(),
++});
++
+ export const AllianceRequestIntentSchema = z.object({
+   type: z.literal("allianceRequest"),
+   recipient: MappedID,
+@@ -573,6 +596,9 @@ export const IntentSchema = z.discriminatedUnion("type", [
+   SpawnIntentSchema,
+   MarkDisconnectedIntentSchema,
+   BoatAttackIntentSchema,
++  AirliftIntentSchema,
++  ModUpgradeIntentSchema,
++  ModEquipIntentSchema,
+   CancelBoatIntentSchema,
+   AllianceRequestIntentSchema,
+   AllianceRejectIntentSchema,
+diff --git a/packages/engine-api/src/StatsSchemas.ts b/packages/engine-api/src/StatsSchemas.ts
+index ff2925f..46c9ddb 100644
+--- a/packages/engine-api/src/StatsSchemas.ts
++++ b/packages/engine-api/src/StatsSchemas.ts
+@@ -2,20 +2,22 @@ import { zb, ZbEncodeError } from "@openfront/zbin";
+ import { z } from "zod";
+ import { UnitType } from "./game/GameTypes";
+ 
+-export const bombUnits = ["abomb", "hbomb", "mirv", "mirvw"] as const;
++export const bombUnits = ["abomb", "hbomb", "mirv", "mirvw", "bbust"] as const;
+ export const BombUnitSchema = z.enum(bombUnits);
+ export type BombUnit = z.infer<typeof BombUnitSchema>;
+ export type NukeType =
+   | UnitType.AtomBomb
+   | UnitType.HydrogenBomb
+   | UnitType.MIRV
+-  | UnitType.MIRVWarhead;
++  | UnitType.MIRVWarhead
++  | UnitType.BunkerBuster;
+ 
+ export const unitTypeToBombUnit = {
+   [UnitType.AtomBomb]: "abomb",
+   [UnitType.HydrogenBomb]: "hbomb",
+   [UnitType.MIRV]: "mirv",
+   [UnitType.MIRVWarhead]: "mirvw",
++  [UnitType.BunkerBuster]: "bbust",
+ } as const satisfies Record<NukeType, BombUnit>;
+ 
+ export const boatUnits = ["trade", "trans"] as const;
+@@ -36,6 +38,11 @@ export const otherUnits = [
+   "silo",
+   "saml",
+   "fact",
++  "bunk",
++  "airf",
++  "aatr",
++  "tank",
++  "capt",
+ ] as const;
+ export const OtherUnitSchema = z.enum(otherUnits);
+ export type OtherUnit = z.infer<typeof OtherUnitSchema>;
+@@ -46,7 +53,12 @@ export type OtherUnitType =
+   | UnitType.Port
+   | UnitType.SAMLauncher
+   | UnitType.Warship
+-  | UnitType.Factory;
++  | UnitType.Factory
++  | UnitType.Bunker
++  | UnitType.Airfield
++  | UnitType.AATurret
++  | UnitType.Tank
++  | UnitType.CivilAirport;
+ 
+ export const unitTypeToOtherUnit = {
+   [UnitType.City]: "city",
+@@ -56,6 +68,11 @@ export const unitTypeToOtherUnit = {
+   [UnitType.SAMLauncher]: "saml",
+   [UnitType.Warship]: "wshp",
+   [UnitType.Factory]: "fact",
++  [UnitType.Bunker]: "bunk",
++  [UnitType.Airfield]: "airf",
++  [UnitType.AATurret]: "aatr",
++  [UnitType.Tank]: "tank",
++  [UnitType.CivilAirport]: "capt",
+ } as const satisfies Record<OtherUnitType, OtherUnit>;
+ 
+ // Attacks
+diff --git a/packages/engine-api/src/game/GameTypes.ts b/packages/engine-api/src/game/GameTypes.ts
+index c97c4ca..524acb3 100644
+--- a/packages/engine-api/src/game/GameTypes.ts
++++ b/packages/engine-api/src/game/GameTypes.ts
+@@ -208,6 +208,12 @@ export enum UnitType {
+   MIRVWarhead = "MIRV Warhead",
+   Train = "Train",
+   Factory = "Factory",
++  Bunker = "Bunker",
++  Airfield = "Airfield",
++  AATurret = "AA Turret",
++  BunkerBuster = "Bunker Buster",
++  Tank = "Tank",
++  CivilAirport = "Civil Airport",
+ }
+ 
+ export enum TrainType {
+@@ -221,12 +227,14 @@ export const Nukes = unitTypeGroup([
+   UnitType.HydrogenBomb,
+   UnitType.MIRVWarhead,
+   UnitType.MIRV,
++  UnitType.BunkerBuster,
+ ] as const);
+ 
+ export const BuildableAttacks = unitTypeGroup([
+   UnitType.AtomBomb,
+   UnitType.HydrogenBomb,
+   UnitType.MIRV,
++  UnitType.BunkerBuster,
+   UnitType.Warship,
+ ] as const);
+ 
+@@ -237,6 +245,10 @@ export const Structures = unitTypeGroup([
+   UnitType.MissileSilo,
+   UnitType.Port,
+   UnitType.Factory,
++  UnitType.Bunker,
++  UnitType.Airfield,
++  UnitType.AATurret,
++  UnitType.CivilAirport,
+ ] as const);
+ 
+ export const BuildMenus = unitTypeGroup([
+@@ -247,6 +259,7 @@ export const BuildMenus = unitTypeGroup([
+ export const PlayerBuildable = unitTypeGroup([
+   ...BuildMenus.types,
+   UnitType.TransportShip,
++  UnitType.Tank,
+ ] as const);
+ 
+ export type PlayerBuildableUnitType = (typeof PlayerBuildable.types)[number];
+diff --git a/packages/engine-api/src/game/GameUpdates.ts b/packages/engine-api/src/game/GameUpdates.ts
+index 13e8a39..39f8b17 100644
+--- a/packages/engine-api/src/game/GameUpdates.ts
++++ b/packages/engine-api/src/game/GameUpdates.ts
+@@ -288,6 +288,8 @@ export interface PlayerUpdate {
+   betrayals?: number;
+   lastDeleteUnitTick?: Tick;
+   isLobbyCreator?: boolean;
++  /** 모드 업그레이드/연구 단계 (ModCatalog 항목 순서) */
++  modLevels?: readonly number[];
+ }
+ 
+ export interface AllianceView {
+diff --git a/packages/engine-api/src/game/ModCatalog.ts b/packages/engine-api/src/game/ModCatalog.ts
+new file mode 100644
+index 0000000..e461453
+--- /dev/null
++++ b/packages/engine-api/src/game/ModCatalog.ts
+@@ -0,0 +1,271 @@
++/**
++ * 모드 업그레이드/연구 카탈로그.
++ *
++ * 플레이어는 항목마다 "단계(level)"를 하나씩 가진다. 단계 배열의 순서가 곧
++ * 항목 번호이므로 **기존 항목의 순서를 바꾸지 말고 새 항목은 맨 뒤에 추가**할 것.
++ * (스냅샷/네트워크에는 단계 숫자 배열만 저장된다.)
++ */
++export type ModGroup = "troop" | "weapon" | "supply" | "bomb" | "slot";
++
++export interface ModItem {
++  key: string;
++  group: ModGroup;
++  /** 최대 단계 (연구처럼 한 번만 사는 항목은 1) */
++  maxLevel: number;
++  /** 다음 단계(= level+1)를 사는 데 필요한 골드 */
++  costOfNext(level: number): bigint;
++}
++
++/** 병사 강화: 10단계, 단계마다 +10%. 가격은 단계의 제곱에 비례해 올라 10단계가 37.5M. */
++const TROOP_MAX_LEVEL = 10;
++const TROOP_COST_UNIT = 375_000n;
++export function troopUpgradeCost(nextLevel: number): bigint {
++  return TROOP_COST_UNIT * BigInt(nextLevel * nextLevel);
++}
++/** n단계의 효과 배율 (1단계 = 1.1배 ... 10단계 = 2.0배) */
++export function troopUpgradeMultiplier(level: number): number {
++  return 1 + 0.1 * level;
++}
++
++function troopItem(key: string): ModItem {
++  return {
++    key,
++    group: "troop",
++    maxLevel: TROOP_MAX_LEVEL,
++    costOfNext: (level) => troopUpgradeCost(level + 1),
++  };
++}
++
++// ───────── 무기: 현대식 무기 8종 (한 번 연구하면 영구, 가장 센 무기가 적용) ─────────
++export interface WeaponSpec {
++  key: string;
++  cost: bigint;
++  /** 병사 공격력 배율 (여러 개를 연구해도 가장 큰 하나만 적용) */
++  attackMultiplier: number;
++}
++export const WEAPONS: readonly WeaponSpec[] = [
++  { key: "weapon_assault_rifle", cost: 1_500_000n, attackMultiplier: 1.1 },
++  { key: "weapon_machine_gun", cost: 3_000_000n, attackMultiplier: 1.2 },
++  { key: "weapon_sniper_rifle", cost: 5_000_000n, attackMultiplier: 1.35 },
++  { key: "weapon_mortar", cost: 8_000_000n, attackMultiplier: 1.5 },
++  { key: "weapon_rocket_launcher", cost: 12_000_000n, attackMultiplier: 1.7 },
++  { key: "weapon_howitzer", cost: 18_000_000n, attackMultiplier: 1.95 },
++  { key: "weapon_atgm", cost: 26_000_000n, attackMultiplier: 2.25 },
++  { key: "weapon_railgun", cost: 36_000_000n, attackMultiplier: 2.6 },
++];
++
++// ───────── 폭탄: 기존 3개 슬롯(원자/수소/다탄두)에 끼우는 변형 ─────────
++export type BombSlot = "abomb" | "hbomb" | "mirv";
++export interface BombVariant {
++  key: string;
++  slot: BombSlot;
++  cost: bigint;
++  /** 폭발 반경 배율 (안쪽/바깥쪽) */
++  innerMul: number;
++  outerMul: number;
++  /** 병력 피해 배율 */
++  troopMul: number;
++  /** 건물(유닛) 파괴 여부 */
++  destroysStructures: boolean;
++  /** 폭탄 구매 가격 배율 (벙커 부스터 제외) */
++  priceMul: number;
++}
++export const BOMB_VARIANTS: readonly BombVariant[] = [
++  // 원자폭탄 슬롯
++  {
++    key: "bomb_cluster",
++    slot: "abomb",
++    cost: 4_000_000n,
++    innerMul: 0.5,
++    outerMul: 1.4,
++    troopMul: 0.6,
++    destroysStructures: true,
++    priceMul: 1.2,
++  },
++  {
++    key: "bomb_thermobaric",
++    slot: "abomb",
++    cost: 6_000_000n,
++    innerMul: 1.3,
++    outerMul: 0.8,
++    troopMul: 1.5,
++    destroysStructures: true,
++    priceMul: 1.3,
++  },
++  {
++    key: "bomb_tactical",
++    slot: "abomb",
++    cost: 3_000_000n,
++    innerMul: 0.7,
++    outerMul: 0.7,
++    troopMul: 1.0,
++    destroysStructures: true,
++    priceMul: 0.5,
++  },
++  {
++    key: "bomb_neutron",
++    slot: "abomb",
++    cost: 9_000_000n,
++    innerMul: 0.6,
++    outerMul: 1.0,
++    troopMul: 2.5,
++    destroysStructures: false,
++    priceMul: 1.5,
++  },
++  {
++    key: "bomb_emp",
++    slot: "abomb",
++    cost: 7_000_000n,
++    innerMul: 0.8,
++    outerMul: 1.2,
++    troopMul: 0.2,
++    destroysStructures: true,
++    priceMul: 0.9,
++  },
++  // 수소폭탄 슬롯
++  {
++    key: "bomb_tsar",
++    slot: "hbomb",
++    cost: 60_000_000n,
++    innerMul: 1.6,
++    outerMul: 1.6,
++    troopMul: 1.5,
++    destroysStructures: true,
++    priceMul: 3,
++  },
++  {
++    key: "bomb_dirty",
++    slot: "hbomb",
++    cost: 20_000_000n,
++    innerMul: 0.8,
++    outerMul: 1.3,
++    troopMul: 0.5,
++    destroysStructures: true,
++    priceMul: 0.8,
++  },
++  {
++    key: "bomb_fuel_air",
++    slot: "hbomb",
++    cost: 25_000_000n,
++    innerMul: 1.0,
++    outerMul: 1.15,
++    troopMul: 1.3,
++    destroysStructures: true,
++    priceMul: 1.2,
++  },
++  {
++    key: "bomb_boosted",
++    slot: "hbomb",
++    cost: 30_000_000n,
++    innerMul: 1.25,
++    outerMul: 1.25,
++    troopMul: 1.0,
++    destroysStructures: true,
++    priceMul: 1.6,
++  },
++  // 다탄두 슬롯 (탄두 하나의 반경)
++  {
++    key: "bomb_mirv_precise",
++    slot: "mirv",
++    cost: 15_000_000n,
++    innerMul: 1.2,
++    outerMul: 0.8,
++    troopMul: 1.0,
++    destroysStructures: true,
++    priceMul: 1.1,
++  },
++  {
++    key: "bomb_mirv_wide",
++    slot: "mirv",
++    cost: 15_000_000n,
++    innerMul: 0.6,
++    outerMul: 1.3,
++    troopMul: 1.0,
++    destroysStructures: true,
++    priceMul: 1.1,
++  },
++];
++/** 12번째 폭탄: 벙커 부스터 (독립 폭탄, 연구해야 쓸 수 있음) */
++export const BUNKER_BUSTER_RESEARCH = {
++  key: "bomb_bunker_buster",
++  cost: 5_000_000n,
++};
++
++export const BOMB_SLOTS: readonly BombSlot[] = ["abomb", "hbomb", "mirv"];
++export const slotKey = (slot: BombSlot) => `slot_${slot}`;
++
++function researchItem(key: string, group: ModGroup, cost: bigint): ModItem {
++  return { key, group, maxLevel: 1, costOfNext: () => cost };
++}
++
++function tieredItem(
++  key: string,
++  group: ModGroup,
++  unit: bigint,
++  max: number,
++): ModItem {
++  return {
++    key,
++    group,
++    maxLevel: max,
++    costOfNext: (level) => unit * BigInt((level + 1) * (level + 1)),
++  };
++}
++
++/** 탱크 연구 단계(0~5)의 지원 효과: 근처 전투에서 병력 손실 배율 / 점령 시간 배율 */
++export function tankLossFactor(techLevel: number): number {
++  return Math.max(0.3, 0.6 - 0.05 * techLevel);
++}
++export function tankSpeedFactor(techLevel: number): number {
++  return Math.max(0.4, 0.7 - 0.05 * techLevel);
++}
++/** 수송기 한 번에 실을 수 있는 병사 수 (연구할수록 증가) */
++export function airCapacity(level: number): number {
++  return 15_000 * (1 + level);
++}
++
++export const MOD_ITEMS: readonly ModItem[] = [
++  troopItem("troop_hp"), // 0: 병사 체력 (자기 병력 손실 감소)
++  troopItem("troop_atk"), // 1: 병사 공격력 (적 병력 손실 증가, 점령 속도 증가)
++  troopItem("troop_def"), // 2: 병사 방어력 (공격자의 손실 증가, 점령 속도 감소)
++  ...WEAPONS.map((w) => researchItem(w.key, "weapon", w.cost)), // 3~10
++  tieredItem("tank_tech", "supply", 6_000_000n, 5), // 11: 탱크 연구 (단계마다 더 좋은 탱크)
++  tieredItem("air_cap", "supply", 4_000_000n, 5), // 12: 수송기 적재량
++  ...BOMB_VARIANTS.map((b) => researchItem(b.key, "bomb", b.cost)), // 13~23
++  researchItem(BUNKER_BUSTER_RESEARCH.key, "bomb", BUNKER_BUSTER_RESEARCH.cost), // 24
++  // 슬롯 장착 상태: 값 = 장착한 변형의 BOMB_VARIANTS 번호 + 1 (0 = 기본 폭탄)
++  { key: "slot_abomb", group: "slot", maxLevel: 0, costOfNext: () => 0n }, // 25
++  { key: "slot_hbomb", group: "slot", maxLevel: 0, costOfNext: () => 0n }, // 26
++  { key: "slot_mirv", group: "slot", maxLevel: 0, costOfNext: () => 0n }, // 27
++];
++
++/** 연구한 무기 중 가장 센 무기의 공격력 배율 (없으면 1) */
++export function bestWeaponMultiplier(levelOf: (key: string) => number): number {
++  let best = 1;
++  for (const w of WEAPONS) {
++    if (levelOf(w.key) > 0 && w.attackMultiplier > best)
++      best = w.attackMultiplier;
++  }
++  return best;
++}
++
++/** 해당 슬롯에 장착된 폭탄 변형 (기본 폭탄이면 null) */
++export function equippedVariant(
++  slot: BombSlot,
++  levelOf: (key: string) => number,
++): BombVariant | null {
++  const n = levelOf(slotKey(slot));
++  if (n <= 0) return null;
++  const v = BOMB_VARIANTS[n - 1];
++  return v !== undefined && v.slot === slot && levelOf(v.key) > 0 ? v : null;
++}
++
++export const MOD_KEYS: readonly string[] = MOD_ITEMS.map((i) => i.key);
++
++export function modIndex(key: string): number {
++  return MOD_KEYS.indexOf(key);
++}
++
++export function modItem(key: string): ModItem | undefined {
++  return MOD_ITEMS.find((i) => i.key === key);
++}
+diff --git a/packages/engine-lib/src/configuration/Config.ts b/packages/engine-lib/src/configuration/Config.ts
+index aee417f..c7e9026 100644
+--- a/packages/engine-lib/src/configuration/Config.ts
++++ b/packages/engine-lib/src/configuration/Config.ts
+@@ -232,6 +232,28 @@ export class Config {
+       case UnitType.DefensePost:
+         info = { constructionDuration: this.instantBuild() ? 0 : 5 * 10 };
+         break;
++      case UnitType.Tank:
++        // 탱크 배치 시간 5초
++        info = { constructionDuration: this.instantBuild() ? 0 : 5 * 10 };
++        break;
++      case UnitType.CivilAirport:
++      case UnitType.AATurret:
++        info = {
++          constructionDuration: this.instantBuild() ? 0 : 5 * 10,
++          upgradable: true,
++        };
++        break;
++      case UnitType.Airfield:
++        // 설치 시간은 기본 건물과 동일 (5초)
++        info = {
++          constructionDuration: this.instantBuild() ? 0 : 5 * 10,
++          upgradable: true,
++        };
++        break;
++      case UnitType.Bunker:
++        // 설치 시간 10초 (10 ticks/sec)
++        info = { constructionDuration: this.instantBuild() ? 0 : 10 * 10 };
++        break;
+       case UnitType.SAMLauncher:
+         info = {
+           constructionDuration: this.instantBuild()
+@@ -253,6 +275,7 @@ export class Config {
+       case UnitType.HydrogenBomb:
+       case UnitType.MIRV:
+       case UnitType.MIRVWarhead:
++      case UnitType.BunkerBuster:
+       case UnitType.TradeShip:
+       case UnitType.Train:
+         info = {};
+@@ -427,6 +450,9 @@ export class Config {
+         return { inner: 12, outer: 30 };
+       case UnitType.HydrogenBomb:
+         return { inner: 80, outer: 100 };
++      case UnitType.BunkerBuster:
++        // 좁은 범위의 정밀 폭발물: 범위 안의 벙커를 모두 파괴
++        return { inner: 5, outer: 10 };
+     }
+     throw new Error(`Unknown nuke type: ${unitType}`);
+   }
+diff --git a/packages/engine-lib/src/game/PackedUnitUpdates.ts b/packages/engine-lib/src/game/PackedUnitUpdates.ts
+index 5c7ef72..7d21841 100644
+--- a/packages/engine-lib/src/game/PackedUnitUpdates.ts
++++ b/packages/engine-lib/src/game/PackedUnitUpdates.ts
+@@ -46,6 +46,12 @@ export const PACKED_UNIT_TYPES: readonly UnitType[] = [
+   UnitType.MIRVWarhead, // 14
+   UnitType.Train, // 15
+   UnitType.Factory, // 16
++  UnitType.Bunker, // 17
++  UnitType.Airfield, // 18
++  UnitType.AATurret, // 19
++  UnitType.BunkerBuster, // 20
++  UnitType.Tank, // 21
++  UnitType.CivilAirport, // 22
+ ] as const;
+ 
+ const UNIT_TYPE_TO_INT = new Map<UnitType, number>(
+diff --git a/packages/engine/src/configuration/EngineConfig.ts b/packages/engine/src/configuration/EngineConfig.ts
+index 3016f33..6cd4d48 100644
+--- a/packages/engine/src/configuration/EngineConfig.ts
++++ b/packages/engine/src/configuration/EngineConfig.ts
+@@ -1,3 +1,7 @@
++import {
++  BombSlot,
++  equippedVariant,
++} from "@openfront/engine-api/game/ModCatalog";
+ import {
+   Difficulty,
+   GameType,
+@@ -54,6 +58,18 @@ export interface AttackLogicResult {
+   tickFraction: number;
+ }
+ 
++/** 장착한 폭탄 변형이 있으면 가격에 배율을 곱한다. */
++function variantPrice(
++  slot: BombSlot,
++  base: (game: Game, player: Player) => Gold,
++): (game: Game, player: Player) => Gold {
++  return (game, player) => {
++    const cost = base(game, player);
++    const v = equippedVariant(slot, (k) => player.modLevel(k));
++    return v === null ? cost : BigInt(Math.floor(Number(cost) * v.priceMul));
++  };
++}
++
+ // attackLogic tunables
+ const LARGE_TERRITORY_MIDPOINT = 300_000;
+ const LARGE_TERRITORY_STEEPNESS = 2.5;
+@@ -358,11 +374,20 @@ export class EngineConfig extends Config {
+           UnitType.Factory,
+         );
+       case UnitType.AtomBomb:
+-        return this.costWrapper(() => 750_000, UnitType.AtomBomb);
++        return variantPrice(
++          "abomb",
++          this.costWrapper(() => 750_000, UnitType.AtomBomb),
++        );
++      case UnitType.BunkerBuster:
++        // 벙커 부스터: 가격 40M 고정
++        return this.costWrapper(() => 40_000_000, UnitType.BunkerBuster);
+       case UnitType.HydrogenBomb:
+-        return this.costWrapper(() => 5_000_000, UnitType.HydrogenBomb);
++        return variantPrice(
++          "hbomb",
++          this.costWrapper(() => 5_000_000, UnitType.HydrogenBomb),
++        );
+       case UnitType.MIRV:
+-        return (game: Game, player: Player) => {
++        return variantPrice("mirv", (game: Game, player: Player) => {
+           if (
+             player.type() === PlayerType.Human &&
+             this.hasInfiniteGoldFor(player)
+@@ -370,7 +395,7 @@ export class EngineConfig extends Config {
+             return 0n;
+           }
+           return 25_000_000n + BigInt(game.mirvsLaunched()) * 15_000_000n;
+-        };
++        });
+       case UnitType.MissileSilo:
+         return this.costWrapper(() => 1_000_000, UnitType.MissileSilo);
+       case UnitType.DefensePost:
+@@ -378,6 +403,21 @@ export class EngineConfig extends Config {
+           (numUnits: number) => Math.min(250_000, (numUnits + 1) * 50_000),
+           UnitType.DefensePost,
+         );
++      case UnitType.CivilAirport:
++        // 민간 공항: 가격 5M 고정 (업그레이드도 같은 가격)
++        return this.costWrapper(() => 5_000_000, UnitType.CivilAirport);
++      case UnitType.Tank:
++        // 탱크: 가격 15M 고정
++        return this.costWrapper(() => 15_000_000, UnitType.Tank);
++      case UnitType.AATurret:
++        // 대공 터렛: 가격 7M 고정
++        return this.costWrapper(() => 7_000_000, UnitType.AATurret);
++      case UnitType.Airfield:
++        // 스카이포트: 가격 10M 고정 (개수가 늘어도 안 오름)
++        return this.costWrapper(() => 10_000_000, UnitType.Airfield);
++      case UnitType.Bunker:
++        // 벙커: 가격 20M 고정
++        return this.costWrapper(() => 20_000_000, UnitType.Bunker);
+       case UnitType.SAMLauncher:
+         return this.costWrapper(
+           (numUnits: number) => Math.min(3_000_000, (numUnits + 1) * 1_500_000),
+@@ -687,6 +727,7 @@ export class EngineConfig extends Config {
+     switch (unitType) {
+       case UnitType.AtomBomb:
+       case UnitType.HydrogenBomb:
++      case UnitType.BunkerBuster:
+         return 10;
+       case UnitType.MIRV:
+         return 15;
+diff --git a/packages/engine/src/execution/AATurretExecution.ts b/packages/engine/src/execution/AATurretExecution.ts
+new file mode 100644
+index 0000000..cd6bfba
+--- /dev/null
++++ b/packages/engine/src/execution/AATurretExecution.ts
+@@ -0,0 +1,88 @@
++import { zRef } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Unit } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/** 대공 터렛 재사용 대기시간: 13초 (1초 = 10틱) */
++export const AA_TURRET_COOLDOWN_TICKS = 13 * 10;
++/** 대공 터렛이 영공을 지키는 반경 (타일) */
++export const AA_TURRET_RANGE = 60;
++
++/** 터렛 레벨별 반경 / 쿨타임 */
++export function aaTurretRange(level: number): number {
++  return AA_TURRET_RANGE + 15 * (level - 1);
++}
++export function aaTurretCooldown(level: number): number {
++  return Math.max(50, AA_TURRET_COOLDOWN_TICKS - 20 * (level - 1));
++}
++
++/**
++ * 대공 터렛: 영공으로 들어오는 적 수송기(에어본)를 격추한다.
++ * 한 번 쏘면 13초 동안 다시 쏠 수 없다 (쿨타임은 AirliftExecution이 launch()로 시작).
++ */
++export class AATurretExecution implements Execution {
++  private active = true;
++  private mg: Game;
++
++  constructor(private turret: Unit) {}
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++  }
++
++  tick(ticks: number): void {
++    if (!this.turret.isActive()) {
++      this.active = false;
++      return;
++    }
++    // 쿨타임이 끝난 발사 기록 제거
++    while (this.turret.missileTimerQueue().length > 0) {
++      const front = this.turret.missileTimerQueue()[0];
++      if (this.mg.ticks() - front < aaTurretCooldown(this.turret.level())) {
++        break;
++      }
++      this.turret.reloadMissile();
++    }
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return AATurretExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      turret: w.unit(this.turret),
++    });
++  }
++
++  restoreSnapshot(s: AATurretState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.turret = r.unit(s.turret);
++  }
++}
++
++const AATurretStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  turret: zRef(),
++});
++type AATurretState = z.infer<typeof AATurretStateSchema>;
++
++export const AATurretExecutionSnapshot = execSnapshotType({
++  name: "AATurret",
++  version: 1,
++  schema: AATurretStateSchema,
++  cls: () => AATurretExecution,
++});
+diff --git a/packages/engine/src/execution/AirfieldExecution.ts b/packages/engine/src/execution/AirfieldExecution.ts
+new file mode 100644
+index 0000000..fe4a95d
+--- /dev/null
++++ b/packages/engine/src/execution/AirfieldExecution.ts
+@@ -0,0 +1,103 @@
++import { zRef } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Unit } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/** 스카이포트 1개가 보유할 수 있는 전투기 수 */
++export const FIGHTERS_PER_AIRFIELD = 2;
++/** 전투기 1대 생산 주기: 60초 (1초 = 10틱) */
++export const FIGHTER_BUILD_TICKS = 60 * 10;
++
++/**
++ * 스카이포트: 완공 후 60초마다 전투기 1대를 만들고, 최대 2대까지 보관한다.
++ * 전투기는 이후 단계(수송기/대공 터렛)에서 사용한다.
++ */
++export class AirfieldExecution implements Execution {
++  private active = true;
++  private mg: Game;
++  private fighters = 0;
++  private ticksSinceBuilt = 0;
++
++  constructor(private airfield: Unit) {}
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++  }
++
++  fighterCount(): number {
++    return this.fighters;
++  }
++
++  /** 전투기를 사용(소모). 성공하면 true */
++  takeFighter(): boolean {
++    if (this.fighters <= 0) return false;
++    this.fighters--;
++    return true;
++  }
++
++  tick(ticks: number): void {
++    if (!this.airfield.isActive()) {
++      this.active = false;
++      return;
++    }
++    if (this.airfield.isUnderConstruction()) return;
++    const level = this.airfield.level();
++    if (this.fighters >= FIGHTERS_PER_AIRFIELD * level) {
++      this.ticksSinceBuilt = 0;
++      return;
++    }
++    this.ticksSinceBuilt++;
++    // 레벨이 높을수록 더 빨리 만든다 (레벨 n이면 60초 / n)
++    if (this.ticksSinceBuilt >= FIGHTER_BUILD_TICKS / level) {
++      this.ticksSinceBuilt = 0;
++      this.fighters++;
++    }
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return AirfieldExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      airfield: w.unit(this.airfield),
++      fighters: this.fighters,
++      ticksSinceBuilt: this.ticksSinceBuilt,
++    });
++  }
++
++  restoreSnapshot(s: AirfieldState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.airfield = r.unit(s.airfield);
++    this.fighters = s.fighters;
++    this.ticksSinceBuilt = s.ticksSinceBuilt;
++  }
++}
++
++const AirfieldStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  airfield: zRef(),
++  fighters: z.number(),
++  ticksSinceBuilt: z.number(),
++});
++type AirfieldState = z.infer<typeof AirfieldStateSchema>;
++
++export const AirfieldExecutionSnapshot = execSnapshotType({
++  name: "Airfield",
++  version: 1,
++  schema: AirfieldStateSchema,
++  cls: () => AirfieldExecution,
++});
+diff --git a/packages/engine/src/execution/AirliftExecution.ts b/packages/engine/src/execution/AirliftExecution.ts
+new file mode 100644
+index 0000000..a8c70b7
+--- /dev/null
++++ b/packages/engine/src/execution/AirliftExecution.ts
+@@ -0,0 +1,183 @@
++import { TileRef } from "@openfront/engine-api/game/GameMap";
++import { UnitType } from "@openfront/engine-api/game/GameTypes";
++import {
++  zInt,
++  zNum,
++  zPlayerRef,
++  zTile,
++} from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Player } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++import { airCapacity } from "@openfront/engine-api/game/ModCatalog";
++import { AA_TURRET_RANGE, aaTurretRange } from "./AATurretExecution";
++import { AttackExecution } from "./AttackExecution";
++
++/** 병사 수송기 "에어본" 1회 출격 비용: 3M */
++export const AIRBORNE_COST = 3_000_000n;
++/** 수송기 속도: 틱당 타일 수 (맨해튼 거리 기준) */
++const AIRBORNE_TILES_PER_TICK = 2;
++
++/**
++ * 에어본: 스카이포트에서 병사만 싣고 날아가 다른 땅에 착륙해 공격한다.
++ * 조건: 완공된 스카이포트 1개 이상 + 3M. 병사는 출발 시 차감된다.
++ * (지도에 보이는 비행기 그림은 아직 없음 - 이후 단계에서 추가)
++ */
++export class AirliftExecution implements Execution {
++  private active = true;
++  private mg: Game;
++  private arrivalTick = 0;
++  private troops: number;
++
++  constructor(
++    private attacker: Player,
++    private dst: TileRef,
++    troops: number,
++  ) {
++    this.troops = troops;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++    if (!mg.isValidRef(this.dst) || !mg.isLand(this.dst)) {
++      return this.fail("invalid destination");
++    }
++    const target = mg.owner(this.dst);
++    if (target === this.attacker) return this.fail("own territory");
++    if (target.isPlayer() && !this.attacker.canAttackPlayer(target)) {
++      return this.fail("cannot attack that player");
++    }
++
++    const airfields = this.attacker
++      .units(UnitType.Airfield)
++      .filter((u) => u.isActive() && !u.isUnderConstruction());
++    if (airfields.length === 0) return this.fail("no airfield");
++    if (this.attacker.gold() < AIRBORNE_COST) return this.fail("no gold");
++
++    this.troops = Math.min(
++      this.troops,
++      this.attacker.troops(),
++      airCapacity(this.attacker.modLevel("air_cap")),
++    );
++    if (!(this.troops > 0)) return this.fail("no troops");
++
++    // 가장 가까운 스카이포트에서 출발
++    let best = Infinity;
++    for (const a of airfields) {
++      best = Math.min(best, mg.manhattanDist(a.tile(), this.dst));
++    }
++    this.arrivalTick =
++      ticks + Math.max(1, Math.ceil(best / AIRBORNE_TILES_PER_TICK));
++
++    this.attacker.removeGold(AIRBORNE_COST);
++    this.attacker.removeTroops(this.troops);
++  }
++
++  private fail(reason: string): void {
++    console.warn(`Airborne launch failed (${reason})`);
++    this.active = false;
++  }
++
++  tick(ticks: number): void {
++    if (!this.active || ticks < this.arrivalTick) return;
++    this.active = false;
++
++    // 대공 터렛: 착륙 지점 영공에 쿨타임이 끝난 적 터렛이 있으면 격추 (병사 전멸)
++    const turret = this.mg
++      .nearbyUnits(this.dst, AA_TURRET_RANGE + 15 * 9, [UnitType.AATurret])
++      .filter(
++        ({ unit, distSquared }) =>
++          distSquared <= aaTurretRange(unit.level()) ** 2,
++      )
++      .map(({ unit }) => unit)
++      .find(
++        (u) =>
++          u.isActive() &&
++          !u.isUnderConstruction() &&
++          !u.isInCooldown() &&
++          u.owner() !== this.attacker &&
++          !this.attacker.isFriendly(u.owner()),
++      );
++    if (turret !== undefined) {
++      turret.launch();
++      console.warn(
++        `Airborne shot down by AA turret of ${turret.owner().name()}`,
++      );
++      return;
++    }
++
++    const target = this.mg.owner(this.dst);
++    if (target === this.attacker) {
++      this.attacker.addTroops(this.troops);
++      return;
++    }
++    if (target.isPlayer() && this.attacker.isFriendly(target)) {
++      this.attacker.addTroops(this.troops);
++      return;
++    }
++    this.attacker.conquer(this.dst);
++    this.mg.addExecution(
++      new AttackExecution(
++        this.troops,
++        this.attacker,
++        target.isPlayer() ? target.id() : this.mg.terraNullius().id(),
++        this.dst,
++        false,
++      ),
++    );
++  }
++
++  owner(): Player {
++    return this.attacker;
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return AirliftExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      attacker: w.player(this.attacker),+      dst: this.dst,
++      troops: this.troops,
++      arrivalTick: this.arrivalTick,
++    });
++  }
++
++  restoreSnapshot(s: AirliftState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.attacker = r.player(s.attacker);
++    this.dst = s.dst;
++    this.troops = s.troops;
++    this.arrivalTick = s.arrivalTick;
++  }
++}
++
++const AirliftStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  attacker: zPlayerRef(),
++  dst: zTile(),
++  troops: zNum(),
++  arrivalTick: zInt(),
++});
++type AirliftState = z.infer<typeof AirliftStateSchema>;
++
++export const AirliftExecutionSnapshot = execSnapshotType({
++  name: "Airlift",
++  version: 1,
++  schema: AirliftStateSchema,
++  cls: () => AirliftExecution,
++});
+diff --git a/packages/engine/src/execution/AttackExecution.ts b/packages/engine/src/execution/AttackExecution.ts
+index 1ec66c0..8569352 100644
+--- a/packages/engine/src/execution/AttackExecution.ts
++++ b/packages/engine/src/execution/AttackExecution.ts
+@@ -1,3 +1,10 @@
++import {
++  bestWeaponMultiplier,
++  tankLossFactor,
++  tankSpeedFactor,
++  troopUpgradeMultiplier,
++} from "@openfront/engine-api/game/ModCatalog";
++import { TANK_SUPPORT_RANGE } from "./TankExecution";
+ import { GameMap, TileRef } from "@openfront/engine-api/game/GameMap";
+ import {
+   Difficulty,
+@@ -343,11 +350,44 @@ export class AttackExecution implements Execution {
+         continue;
+       }
+       this.addNeighbors(tileToConquer);
+-      const { attackerTroopLoss, defenderTroopLoss, tickFraction } = this.mg
++      const logic = this.mg
+         .config()
+         .attackLogic(
+           this.attackLogicInput(troopCount, tileToConquer, borderSize),
+         );
++      // 탱크 지원: 근처에 아군 탱크가 있으면 병력 손실 40% 감소, 점령 속도 30% 증가
++      const hasTank = this.mg.hasUnitNearby(
++        tileToConquer,
++        TANK_SUPPORT_RANGE,
++        UnitType.Tank,
++        this._owner.id(),
++      );
++      // 병사 업그레이드 (체력/공격력/방어력, 단계마다 +10%)
++      const atkMul =
++        troopUpgradeMultiplier(this._owner.modLevel("troop_atk")) *
++        bestWeaponMultiplier((k) => this._owner.modLevel(k));
++      const tankTech = this._owner.modLevel("tank_tech");
++      const hpMul = troopUpgradeMultiplier(this._owner.modLevel("troop_hp"));
++      const defender = this.target.isPlayer() ? this.target : null;
++      const defMul = defender
++        ? troopUpgradeMultiplier(defender.modLevel("troop_def"))
++        : 1;
++      const defHpMul = defender
++        ? troopUpgradeMultiplier(defender.modLevel("troop_hp"))
++        : 1;
++      const attackerTroopLoss =
++        ((hasTank
++          ? logic.attackerTroopLoss * tankLossFactor(tankTech)
++          : logic.attackerTroopLoss) *
++          defMul) /
++        hpMul;
++      const tickFraction =
++        ((hasTank
++          ? logic.tickFraction * tankSpeedFactor(tankTech)
++          : logic.tickFraction) *
++          defMul) /
++        atkMul;
++      const defenderTroopLoss = (logic.defenderTroopLoss * atkMul) / defHpMul;
+       tickBudget -= tickFraction;
+       troopCount -= attackerTroopLoss;
+       this.attack.setTroops(troopCount);
+diff --git a/packages/engine/src/execution/BunkerExecution.ts b/packages/engine/src/execution/BunkerExecution.ts
+new file mode 100644
+index 0000000..ec20699
+--- /dev/null
++++ b/packages/engine/src/execution/BunkerExecution.ts
+@@ -0,0 +1,66 @@
++import { z } from "zod";
++import { zRef } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { Execution, Game, Unit } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/**
++ * Bunker: passive structure. While an active, completed bunker exists the
++ * owner takes reduced troop losses from bombing (see bunkerBombingReduction).
++ */
++export class BunkerExecution implements Execution {
++  private active = true;
++  private mg: Game;
++
++  constructor(private bunker: Unit) {}
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++  }
++
++  tick(ticks: number): void {
++    if (!this.bunker.isActive()) {
++      this.active = false;
++    }
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return BunkerExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      bunker: w.unit(this.bunker),
++    });
++  }
++
++  restoreSnapshot(s: BunkerState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.bunker = r.unit(s.bunker);
++  }
++}
++
++const BunkerStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  bunker: zRef(),
++});
++type BunkerState = z.infer<typeof BunkerStateSchema>;
++
++export const BunkerExecutionSnapshot = execSnapshotType({
++  name: "Bunker",
++  version: 1,
++  schema: BunkerStateSchema,
++  cls: () => BunkerExecution,
++});
+diff --git a/packages/engine/src/execution/CivilAirportExecution.ts b/packages/engine/src/execution/CivilAirportExecution.ts
+new file mode 100644
+index 0000000..62887d9
+--- /dev/null
++++ b/packages/engine/src/execution/CivilAirportExecution.ts
+@@ -0,0 +1,108 @@
++import { UnitType } from "@openfront/engine-api/game/GameTypes";
++import { zInt, zRef } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Unit } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/** 무역 주기: 10초 (1초 = 10틱) */
++export const AIRPORT_TRADE_TICKS = 100;
++/** 공항 레벨 1당 기본 무역 수입 (10초마다) */
++export const AIRPORT_BASE_INCOME = 100_000n;
++/** 다른 나라의 민간 공항(교역 상대) 하나당 추가 수입 (상대 공항 레벨 기준) */
++export const AIRPORT_PARTNER_INCOME = 40_000n;
++/** 교역 상대로 세는 최대 공항 수 */
++export const AIRPORT_MAX_PARTNERS = 5;
++
++/**
++ * 민간 공항: 비행기로 무역해서 10초마다 돈을 번다.
++ * 수입 = 레벨 × (기본 100K + 상대 나라 공항 하나당 40K, 최대 5개).
++ * 업그레이드하면 레벨만큼 수입이 늘어난다. 전쟁 중인 나라의 공항은 상대로 치지 않는다.
++ */
++export class CivilAirportExecution implements Execution {
++  private active = true;
++  private mg: Game;
++  private tradeTimer = 0;
++
++  constructor(private airport: Unit) {}
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++  }
++
++  /** 다음 무역에서 들어올 수입 */
++  income(): bigint {
++    const owner = this.airport.owner();
++    let partners = 0;
++    for (const other of this.mg.players()) {
++      if (other === owner || !other.isAlive()) continue;
++      if (owner.hasEmbargoAgainst(other) || other.hasEmbargoAgainst(owner)) {
++        continue;
++      }
++      const hasAirport = other
++        .units(UnitType.CivilAirport)
++        .some((u) => u.isActive() && !u.isUnderConstruction());
++      if (hasAirport) partners++;
++    }
++    partners = Math.min(partners, AIRPORT_MAX_PARTNERS);
++    return (
++      BigInt(this.airport.level()) *
++      (AIRPORT_BASE_INCOME + BigInt(partners) * AIRPORT_PARTNER_INCOME)
++    );
++  }
++
++  tick(ticks: number): void {
++    if (!this.airport.isActive()) {
++      this.active = false;
++      return;
++    }
++    if (this.airport.isUnderConstruction()) return;
++    this.tradeTimer++;
++    if (this.tradeTimer < AIRPORT_TRADE_TICKS) return;
++    this.tradeTimer = 0;
++    this.airport.owner().addGold(this.income(), this.airport.tile());
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return CivilAirportExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      airport: w.unit(this.airport),
++      tradeTimer: this.tradeTimer,
++    });
++  }
++
++  restoreSnapshot(s: CivilAirportState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.airport = r.unit(s.airport);
++    this.tradeTimer = s.tradeTimer;
++  }
++}
++
++const CivilAirportStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  airport: zRef(),
++  tradeTimer: zInt(),
++});
++type CivilAirportState = z.infer<typeof CivilAirportStateSchema>;
++
++export const CivilAirportExecutionSnapshot = execSnapshotType({
++  name: "CivilAirport",
++  version: 1,
++  schema: CivilAirportStateSchema,
++  cls: () => CivilAirportExecution,
++});
+diff --git a/packages/engine/src/execution/ConstructionExecution.ts b/packages/engine/src/execution/ConstructionExecution.ts
+index 99d0900..0925557 100644
+--- a/packages/engine/src/execution/ConstructionExecution.ts
++++ b/packages/engine/src/execution/ConstructionExecution.ts
+@@ -15,6 +15,11 @@ import type {
+   SnapshotWriter,
+ } from "../snapshot/SnapshotContext";
+ import { CityExecution } from "./CityExecution";
++import { TankExecution } from "./TankExecution";
++import { AATurretExecution } from "./AATurretExecution";
++import { CivilAirportExecution } from "./CivilAirportExecution";
++import { AirfieldExecution } from "./AirfieldExecution";
++import { BunkerExecution } from "./BunkerExecution";
+ import { DefensePostExecution } from "./DefensePostExecution";
+ import { FactoryExecution } from "./FactoryExecution";
+ import { MirvExecution } from "./MIRVExecution";
+@@ -118,6 +123,7 @@ export class ConstructionExecution implements Execution {
+     const player = this.player;
+     switch (this.constructionType) {
+       case UnitType.AtomBomb:
++      case UnitType.BunkerBuster:
+       case UnitType.HydrogenBomb: {
+         const count = this.amount ?? 1;
+         for (let i = 0; i < count; i++) {
+@@ -139,6 +145,9 @@ export class ConstructionExecution implements Execution {
+       case UnitType.MIRV:
+         this.mg.addExecution(new MirvExecution(player, this.tile));
+         break;
++      case UnitType.Tank:
++        this.mg.addExecution(new TankExecution(player, this.tile));
++        break;
+       case UnitType.Warship:
+         this.mg.addExecution(
+           new WarshipExecution({ owner: player, patrolTile: this.tile }),
+@@ -164,6 +173,18 @@ export class ConstructionExecution implements Execution {
+       case UnitType.Factory:
+         this.mg.addExecution(new FactoryExecution(this.structure!));
+         break;
++      case UnitType.AATurret:
++        this.mg.addExecution(new AATurretExecution(this.structure!));
++        break;
++      case UnitType.CivilAirport:
++        this.mg.addExecution(new CivilAirportExecution(this.structure!));
++        break;
++      case UnitType.Airfield:
++        this.mg.addExecution(new AirfieldExecution(this.structure!));
++        break;
++      case UnitType.Bunker:
++        this.mg.addExecution(new BunkerExecution(this.structure!));
++        break;
+       default:
+         console.warn(
+           `unit type ${this.constructionType} cannot be constructed`,
+@@ -180,6 +201,10 @@ export class ConstructionExecution implements Execution {
+       case UnitType.SAMLauncher:
+       case UnitType.City:
+       case UnitType.Factory:
++      case UnitType.Bunker:
++      case UnitType.Airfield:
++      case UnitType.AATurret:
++      case UnitType.CivilAirport:
+         return true;
+       default:
+         return false;
+diff --git a/packages/engine/src/execution/ExecutionManager.ts b/packages/engine/src/execution/ExecutionManager.ts
+index 60c4516..ca7a31b 100644
+--- a/packages/engine/src/execution/ExecutionManager.ts
++++ b/packages/engine/src/execution/ExecutionManager.ts
+@@ -29,6 +29,9 @@ import { QuickChatExecution } from "./QuickChatExecution";
+ import { RetreatExecution } from "./RetreatExecution";
+ import { SpawnExecution } from "./SpawnExecution";
+ import { TargetPlayerExecution } from "./TargetPlayerExecution";
++import { ModEquipExecution } from "./ModEquipExecution";
++import { ModUpgradeExecution } from "./ModUpgradeExecution";
++import { AirliftExecution } from "./AirliftExecution";
+ import { TransportShipExecution } from "./TransportShipExecution";
+ import { TribeSpawner } from "./TribeSpawner";
+ import { UpgradeStructureExecution } from "./UpgradeStructureExecution";
+@@ -91,6 +94,12 @@ export class Executor {
+         );
+       case "boat":
+         return new TransportShipExecution(player, intent.dst, intent.troops);
++      case "modEquip":
++        return new ModEquipExecution(player, intent.slot, intent.variant);
++      case "modUpgrade":
++        return new ModUpgradeExecution(player, intent.key);
++      case "airlift":
++        return new AirliftExecution(player, intent.dst, intent.troops);
+       case "allianceRequest":
+         return new AllianceRequestExecution(player, intent.recipient);
+       case "allianceReject":
+diff --git a/packages/engine/src/execution/ModEquipExecution.ts b/packages/engine/src/execution/ModEquipExecution.ts
+new file mode 100644
+index 0000000..e93efe3
+--- /dev/null
++++ b/packages/engine/src/execution/ModEquipExecution.ts
+@@ -0,0 +1,85 @@
++import {
++  BOMB_SLOTS,
++  BOMB_VARIANTS,
++  BombSlot,
++  slotKey,
++} from "@openfront/engine-api/game/ModCatalog";
++import { zInt, zPlayerRef } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Player } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/**
++ * 폭탄 슬롯(원자/수소/다탄두)에 연구한 폭탄 변형을 끼운다.
++ * variant 0 = 기본 폭탄으로 되돌리기, n>0 = BOMB_VARIANTS[n-1].
++ * 연구하지 않았거나 슬롯이 다르면 무시한다. 같은 틱에 끝난다.
++ */
++export class ModEquipExecution implements Execution {
++  private active = true;
++
++  constructor(
++    private player: Player,
++    private slot: string,
++    private variant: number,
++  ) {}
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  init(mg: Game, ticks: number): void {
++    this.active = false;
++    if (!(BOMB_SLOTS as readonly string[]).includes(this.slot)) return;
++    const slot = this.slot as BombSlot;
++    if (this.variant === 0) {
++      this.player.setModLevel(slotKey(slot), 0);
++      return;
++    }
++    const v = BOMB_VARIANTS[this.variant - 1];
++    if (v === undefined || v.slot !== slot) return;
++    if (this.player.modLevel(v.key) === 0) return; // 아직 연구 안 함
++    this.player.setModLevel(slotKey(slot), this.variant);
++  }
++
++  tick(ticks: number): void {}
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return ModEquipExecutionSnapshot.write({
++      active: this.active,
++      player: w.player(this.player),
++      slot: this.slot,
++      variant: this.variant,
++    });
++  }
++
++  restoreSnapshot(s: ModEquipState, r: SnapshotReader): void {
++    this.active = s.active;
++    this.player = r.player(s.player);
++    this.slot = s.slot;
++    this.variant = s.variant;
++  }
++}
++
++const ModEquipStateSchema = z.object({
++  active: z.boolean(),
++  player: zPlayerRef(),
++  slot: z.string(),
++  variant: zInt(),
++});
++type ModEquipState = z.infer<typeof ModEquipStateSchema>;
++
++export const ModEquipExecutionSnapshot = execSnapshotType({
++  name: "ModEquip",
++  version: 1,
++  schema: ModEquipStateSchema,
++  cls: () => ModEquipExecution,
++});
+diff --git a/packages/engine/src/execution/ModUpgradeExecution.ts b/packages/engine/src/execution/ModUpgradeExecution.ts
+new file mode 100644
+index 0000000..a78f553
+--- /dev/null
++++ b/packages/engine/src/execution/ModUpgradeExecution.ts
+@@ -0,0 +1,76 @@
++import { modItem } from "@openfront/engine-api/game/ModCatalog";
++import { zPlayerRef } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Player } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/**
++ * 모드 업그레이드/연구 한 단계를 산다. 골드가 모자라거나 최대 단계면 무시.
++ * 같은 틱에 한 번에 끝난다.
++ */
++export class ModUpgradeExecution implements Execution {
++  private active = true;
++
++  constructor(
++    private player: Player,
++    private key: string,
++  ) {}
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  init(mg: Game, ticks: number): void {
++    this.active = false;
++    const item = modItem(this.key);
++    if (item === undefined) {
++      console.warn(`unknown mod upgrade ${this.key}`);
++      return;
++    }
++    const level = this.player.modLevel(this.key);
++    if (level >= item.maxLevel) return;
++    const cost = item.costOfNext(level);
++    if (this.player.gold() < cost) return;
++    this.player.removeGold(cost);
++    this.player.setModLevel(this.key, level + 1);
++  }
++
++  tick(ticks: number): void {}
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return ModUpgradeExecutionSnapshot.write({
++      active: this.active,
++      player: w.player(this.player),
++      key: this.key,
++    });
++  }
++
++  restoreSnapshot(s: ModUpgradeState, r: SnapshotReader): void {
++    this.active = s.active;
++    this.player = r.player(s.player);
++    this.key = s.key;
++  }
++}
++
++const ModUpgradeStateSchema = z.object({
++  active: z.boolean(),
++  player: zPlayerRef(),
++  key: z.string(),
++});
++type ModUpgradeState = z.infer<typeof ModUpgradeStateSchema>;
++
++export const ModUpgradeExecutionSnapshot = execSnapshotType({
++  name: "ModUpgrade",
++  version: 1,
++  schema: ModUpgradeStateSchema,
++  cls: () => ModUpgradeExecution,
++});
+diff --git a/packages/engine/src/execution/NationExecution.ts b/packages/engine/src/execution/NationExecution.ts
+index a398bdf..a256390 100644
+--- a/packages/engine/src/execution/NationExecution.ts
++++ b/packages/engine/src/execution/NationExecution.ts
+@@ -36,6 +36,7 @@ import { NationAllianceBehavior } from "./nation/NationAllianceBehavior";
+ import { NationAttackBehavior } from "./nation/NationAttackBehavior";
+ import { NationEmojiBehavior } from "./nation/NationEmojiBehavior";
+ import { NationMIRVBehavior } from "./nation/NationMIRVBehavior";
++import { NationModBehavior } from "./nation/NationModBehavior";
+ import { NationNukeBehavior } from "./nation/NationNukeBehavior";
+ import { NationStructureBehavior } from "./nation/NationStructureBehavior";
+ import { NationWarshipBehavior } from "./nation/NationWarshipBehavior";
+@@ -266,6 +267,9 @@ export class NationExecution implements Execution {
+     this.attackBehavior.maybeAttack();
+     this.warshipBehavior.counterWarshipInfestation();
+     this.nukeBehavior.maybeSendNuke();
++    // 모드 기능(업그레이드/연구/폭탄 장착/새 건물)도 쓴다
++    // 상태가 없는 행동이라 필드로 들고 있지 않는다 (스냅샷 비교에 영향 없음)
++    new NationModBehavior(this.mg, this.player).think();
+   }
+ 
+   private initializeBehaviors(): void {
+diff --git a/packages/engine/src/execution/NukeExecution.ts b/packages/engine/src/execution/NukeExecution.ts
+index 7d2222e..f93ad44 100644
+--- a/packages/engine/src/execution/NukeExecution.ts
++++ b/packages/engine/src/execution/NukeExecution.ts
+@@ -1,3 +1,9 @@
++import {
++  BombSlot,
++  BombVariant,
++  equippedVariant,
++} from "@openfront/engine-api/game/ModCatalog";
++import { NukeMagnitude } from "@openfront/engine-lib/configuration/Config";
+ import { TileRef } from "@openfront/engine-api/game/GameMap";
+ import {
+   MessageType,
+@@ -77,7 +83,7 @@ export class NukeExecution implements Execution {
+     if (this.nuke === null) {
+       throw new Error("Not initialized");
+     }
+-    const magnitude = this.mg.config().nukeMagnitudes(this.nuke.type());
++    const magnitude = this.magnitude();
+     const rand = new PseudoRandom(this.mg.ticks());
+     const inner2 = magnitude.inner * magnitude.inner;
+     const outer2 = magnitude.outer * magnitude.outer;
+@@ -157,7 +163,7 @@ export class NukeExecution implements Execution {
+       return;
+     }
+ 
+-    const magnitude = this.mg.config().nukeMagnitudes(this.nuke.type());
++    const magnitude = this.magnitude();
+ 
+     const playersToBreakAllianceWith = listNukeBreakAlliance({
+       game: this.mg,
+@@ -364,15 +370,60 @@ export class NukeExecution implements Execution {
+     );
+   }
+ 
++  /** 이 폭탄이 들어가는 슬롯에 장착된 변형 (기본 폭탄이면 null) */
++  private variant(): BombVariant | null {
++    let slot: BombSlot;
++    switch (this.nukeType) {
++      case UnitType.AtomBomb:
++        slot = "abomb";
++        break;
++      case UnitType.HydrogenBomb:
++        slot = "hbomb";
++        break;
++      case UnitType.MIRVWarhead:
++        slot = "mirv";
++        break;
++      default:
++        return null;
++    }
++    return equippedVariant(slot, (k) => this.player.modLevel(k));
++  }
++
++  /** 기본 폭발 반경에 장착한 변형의 배율을 적용한다. */
++  private magnitude(): NukeMagnitude {
++    const base = this.mg.config().nukeMagnitudes(this.nuke!.type());
++    const v = this.variant();
++    if (v === null) return base;
++    return {
++      inner: base.inner * v.innerMul,
++      outer: base.outer * v.outerMul,
++    };
++  }
++
+   private detonate() {
+     if (this.nuke === null) {
+       throw new Error("Not initialized");
+     }
+ 
+     const mg = this.mg;
++
++    // 벙커 부스터: 범위 안의 벙커만 철거하고 땅과 병력에는 피해를 주지 않는다.
++    if (this.nukeType === UnitType.BunkerBuster) {
++      const radius = this.mg.config().nukeMagnitudes(this.nuke.type()).outer;
++      for (const unit of mg.units(UnitType.Bunker)) {
++        if (mg.euclideanDistSquared(this.dst, unit.tile()) < radius * radius) {
++          const friendly = this.player.isFriendly(unit.owner(), true);
++          unit.delete(true, friendly ? undefined : this.player);
++        }
++      }
++      this.active = false;
++      this.nuke.setReachedTarget();
++      this.nuke.delete(false);
++      return;
++    }
+     const config = mg.config();
+ 
+-    const magnitude = config.nukeMagnitudes(this.nuke.type());
++    const magnitude = this.magnitude();
+     const toDestroy = this.tilesToDestroy();
+ 
+     // Retrieve all impacted players and the number of tiles
+@@ -403,36 +454,49 @@ export class NukeExecution implements Execution {
+       }
+       const outgoingAttacks = player.outgoingAttacks();
+       const maxTroops = config.maxTroops(player);
++      // 벙커: 완성된 벙커가 하나라도 있으면 폭격으로 인한 병력 손실 90% 감소 (중복 적용 안 됨)
++      const bunkerFactor =
++        (this.variant()?.troopMul ?? 1) * // 폭탄 변형의 병력 피해 배율
++        (player
++          .units(UnitType.Bunker)
++          .some((b) => b.isActive() && !b.isUnderConstruction())
++          ? 0.1
++          : 1);
+       // nukeDeathFactor could compute the complete fallout in a single call instead
+       for (let i = 0; i < numImpactedTiles; i++) {
+         // Diminishing effect as each affected tile has been nuked
+         const numTilesLeft = tilesBeforeNuke - i;
+         player.removeTroops(
+-          config.nukeDeathFactor(
+-            this.nukeType,
+-            player.troops(),
+-            numTilesLeft,
+-            maxTroops,
+-          ),
++          bunkerFactor *
++            config.nukeDeathFactor(
++              this.nukeType,
++              player.troops(),
++              numTilesLeft,
++              maxTroops,
++            ),
+         );
+         for (const attack of outgoingAttacks) {
+           const attackTroops = attack.troops();
+-          const deaths = config.nukeDeathFactor(
+-            this.nukeType,
+-            attackTroops,
+-            numTilesLeft,
+-            maxTroops,
+-          );
++          const deaths =
++            bunkerFactor *
++            config.nukeDeathFactor(
++              this.nukeType,
++              attackTroops,
++              numTilesLeft,
++              maxTroops,
++            );
+           attack.setTroops(attackTroops - deaths);
+         }
+         for (const unit of transportShips) {
+           const unitTroops = transportShipTroops.get(unit) ?? unit.troops();
+-          const deaths = config.nukeDeathFactor(
+-            this.nukeType,
+-            unitTroops,
+-            numTilesLeft,
+-            maxTroops,
+-          );
++          const deaths =
++            bunkerFactor *
++            config.nukeDeathFactor(
++              this.nukeType,
++              unitTroops,
++              numTilesLeft,
++              maxTroops,
++            );
+           transportShipTroops.set(unit, Math.max(0, unitTroops - deaths));
+         }
+       }
+@@ -443,13 +507,16 @@ export class NukeExecution implements Execution {
+ 
+     const outer2 = magnitude.outer * magnitude.outer;
+     const dst = this.dst;
++    const sparesStructures = this.variant()?.destroysStructures === false;
+     for (const unit of mg.units()) {
+       const type = unit.type();
++      if (sparesStructures && Structures.has(type)) continue; // 중성자탄
+       if (
+         type === UnitType.AtomBomb ||
+         type === UnitType.HydrogenBomb ||
+         type === UnitType.MIRVWarhead ||
+         type === UnitType.MIRV ||
++        type === UnitType.BunkerBuster ||
+         type === UnitType.SAMMissile
+       ) {
+         continue;
+diff --git a/packages/engine/src/execution/PlayerExecution.ts b/packages/engine/src/execution/PlayerExecution.ts
+index 49abd0c..687c753 100644
+--- a/packages/engine/src/execution/PlayerExecution.ts
++++ b/packages/engine/src/execution/PlayerExecution.ts
+@@ -1329,7 +1329,8 @@ export class PlayerExecution implements Execution {
+         u.type() !== UnitType.AtomBomb &&
+         u.type() !== UnitType.HydrogenBomb &&
+         u.type() !== UnitType.MIRVWarhead &&
+-        u.type() !== UnitType.MIRV
++        u.type() !== UnitType.MIRV &&
++        u.type() !== UnitType.BunkerBuster
+       ) {
+         u.delete();
+       }
+diff --git a/packages/engine/src/execution/TankExecution.ts b/packages/engine/src/execution/TankExecution.ts
+new file mode 100644
+index 0000000..3d6a2a6
+--- /dev/null
++++ b/packages/engine/src/execution/TankExecution.ts
+@@ -0,0 +1,142 @@
++import { TileRef } from "@openfront/engine-api/game/GameMap";
++import { UnitType } from "@openfront/engine-api/game/GameTypes";
++import {
++  zInt,
++  zPlayerRef,
++  zRef,
++} from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Player, Unit } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/** 탱크가 아군 공격을 도와주는 반경 (타일) */
++export const TANK_SUPPORT_RANGE = 25;
++/** 탱크 이동 주기: 3틱마다 1타일 */
++const TANK_MOVE_INTERVAL = 3;
++/** 한 번에 살펴볼 최대 전선 타일 수 (성능 보호) */
++const MAX_FRONT_SCAN = 300;
++
++/**
++ * 탱크: 자기 땅 안에 배치한다. 전쟁(지상 공격)이 시작되면 가장 가까운 전선
++ * 쪽으로 스스로 이동하고, 탱크 근처에서 싸우는 공격은 병력 손실이 줄고
++ * 더 빨리 점령한다 (AttackExecution 참고).
++ */
++export class TankExecution implements Execution {
++  private active = true;
++  private mg: Game;
++  private tank: Unit | null = null;
++  private nbuf: TileRef[] = [];
++
++  constructor(
++    private owner: Player,
++    private tile: TileRef,
++  ) {}
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++    const spawn = this.owner.canBuild(UnitType.Tank, this.tile);
++    if (spawn === false) {
++      console.warn("cannot build Tank");
++      this.active = false;
++      return;
++    }
++    this.tank = this.owner.buildUnit(UnitType.Tank, spawn, {});
++  }
++
++  tick(ticks: number): void {
++    if (this.tank === null || !this.tank.isActive()) {
++      this.active = false;
++      return;
++    }
++    if (this.tank.owner() !== this.owner) {
++      this.owner = this.tank.owner();
++    }
++    if (ticks % TANK_MOVE_INTERVAL !== 0) return;
++
++    const goal = this.frontTarget();
++    if (goal === null) return;
++
++    const map = this.mg.map();
++    const here = this.tank.tile();
++    let best = here;
++    let bestDist = this.mg.euclideanDistSquared(here, goal);
++    const n = map.neighbors8(here, (this.nbuf = []));
++    for (let i = 0; i < n; i++) {
++      const t = this.nbuf[i];
++      if (!map.isLand(t) || map.isImpassable(t)) continue;
++      const d = this.mg.euclideanDistSquared(t, goal);
++      if (d < bestDist) {
++        bestDist = d;
++        best = t;
++      }
++    }
++    if (best !== here) this.tank.move(best);
++  }
++
++  /** 가장 가까운 전선 타일 (진행 중인 지상 공격이 없으면 null) */
++  private frontTarget(): TileRef | null {
++    const here = this.tank!.tile();
++    let best: TileRef | null = null;
++    let bestDist = Infinity;
++    for (const attack of this.owner.outgoingAttacks()) {
++      if (!attack.isActive() || attack.retreating()) continue;
++      let scanned = 0;
++      for (const t of attack.borderTiles()) {
++        const d = this.mg.euclideanDistSquared(here, t);
++        if (d < bestDist) {
++          bestDist = d;
++          best = t;
++        }
++        if (++scanned >= MAX_FRONT_SCAN) break;
++      }
++    }
++    return best;
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return TankExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      owner: w.player(this.owner),
++      tile: this.tile,
++      tank: this.tank === null ? null : w.unit(this.tank),
++    });
++  }
++
++  restoreSnapshot(s: TankState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.owner = r.player(s.owner);
++    this.tile = s.tile;
++    this.tank = s.tank === null ? null : r.unit(s.tank);
++  }
++}
++
++const TankStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  owner: zPlayerRef(),
++  tile: zInt(),
++  tank: zRef().nullable(),
++});
++type TankState = z.infer<typeof TankStateSchema>;
++
++export const TankExecutionSnapshot = execSnapshotType({
++  name: "Tank",
++  version: 1,
++  schema: TankStateSchema,
++  cls: () => TankExecution,
++});
+diff --git a/packages/engine/src/execution/nation/NationModBehavior.ts b/packages/engine/src/execution/nation/NationModBehavior.ts
+new file mode 100644
+index 0000000..308e92c
+--- /dev/null
++++ b/packages/engine/src/execution/nation/NationModBehavior.ts
+@@ -0,0 +1,179 @@
++import { TileRef } from "@openfront/engine-api/game/GameMap";
++import { UnitType } from "@openfront/engine-api/game/GameTypes";
++import {
++  BOMB_VARIANTS,
++  BombSlot,
++  MOD_ITEMS,
++  slotKey,
++} from "@openfront/engine-api/game/ModCatalog";
++import { Game, Player } from "../../game/Game";
++import { ConstructionExecution } from "../ConstructionExecution";
++import { ModEquipExecution } from "../ModEquipExecution";
++import { ModUpgradeExecution } from "../ModUpgradeExecution";
++
++/** 국가 AI가 항상 남겨 두는 골드 (핵·건물 비용용) */
++const RESERVE = 3_000_000n;
++
++/** 연구/업그레이드 우선순위 (싼 것부터 자연스럽게 사도록 가격순으로 고른다) */
++const RESEARCH_KEYS = MOD_ITEMS.filter(
++  (i) =>
++    i.group === "troop" ||
++    i.group === "weapon" ||
++    i.key === "tank_tech" ||
++    i.key === "air_cap",
++).map((i) => i.key);
++
++/** AI가 좋아하는 폭탄 변형 (슬롯별 우선순위, 앞이 먼저) */
++const BOMB_PREFERENCE: Record<BombSlot, string[]> = {
++  abomb: ["bomb_thermobaric", "bomb_cluster", "bomb_tactical"],
++  hbomb: ["bomb_boosted", "bomb_fuel_air", "bomb_tsar"],
++  mirv: ["bomb_mirv_wide", "bomb_mirv_precise"],
++};
++
++/**
++ * 모드 기능을 국가 AI가 쓰게 하는 행동:
++ * 업그레이드/무기/탱크 연구, 폭탄 연구와 슬롯 장착, 민간 공항·벙커·대공 터렛·탱크 건설.
++ * 상태를 따로 저장하지 않는다 (매번 게임 상태만 보고 정한다).
++ */
++export class NationModBehavior {
++  constructor(
++    private mg: Game,
++    private player: Player,
++  ) {}
++
++  /** 몇 초에 한 번 호출 */
++  think(): void {
++    if (!this.player.isAlive()) return;
++    this.research();
++    this.manageBombSlots();
++    this.build();
++  }
++
++  private spendable(): bigint {
++    const g = this.player.gold();
++    return g > RESERVE ? g - RESERVE : 0n;
++  }
++
++  /** 지금 살 수 있는 항목 중 가장 싼 것 하나를 산다. */
++  private research(): void {
++    let bestKey: string | null = null;
++    let bestCost = this.spendable();
++    for (const key of RESEARCH_KEYS) {
++      const item = MOD_ITEMS.find((i) => i.key === key)!;
++      const level = this.player.modLevel(key);
++      if (level >= item.maxLevel) continue;
++      const cost = item.costOfNext(level);
++      if (cost <= bestCost) {
++        bestCost = cost;
++        bestKey = key;
++      }
++    }
++    // 병사 강화/무기는 싸게 계속 사고, 비싼 폭탄 연구는 돈이 충분히 남을 때만
++    if (bestKey === null) {
++      for (const v of BOMB_VARIANTS) {
++        if (this.player.modLevel(v.key) > 0) continue;
++        if (!BOMB_PREFERENCE[v.slot].includes(v.key)) continue;
++        if (v.cost * 2n <= this.spendable()) {
++          this.mg.addExecution(new ModUpgradeExecution(this.player, v.key));
++          return;
++        }
++      }
++      return;
++    }
++    this.mg.addExecution(new ModUpgradeExecution(this.player, bestKey));
++  }
++
++  /** 연구한 폭탄 중 가장 선호하는 것을 슬롯에 끼운다. */
++  private manageBombSlots(): void {
++    for (const slot of Object.keys(BOMB_PREFERENCE) as BombSlot[]) {+      const current = this.player.modLevel(slotKey(slot));
++      for (const key of BOMB_PREFERENCE[slot]) {
++        if (this.player.modLevel(key) === 0) continue;
++        // 차르봄바는 비싸서 부자일 때만
++        if (key === "bomb_tsar" && this.spendable() < 40_000_000n) continue;
++        const idx = BOMB_VARIANTS.findIndex((v) => v.key === key);
++        if (current !== idx + 1) {
++          this.mg.addExecution(
++            new ModEquipExecution(this.player, slot, idx + 1),
++          );
++        }
++        break;
++      }
++    }
++  }
++
++  private count(type: UnitType): number {
++    return this.player.units(type).length;
++  }
++
++  private build(): void {
++    const gold = this.spendable();
++    const cost = (t: UnitType) =>
++      this.mg.unitInfo(t).cost(this.mg, this.player);
++
++    // 1) 민간 공항 (돈 버는 건물): 최대 3개
++    if (
++      this.count(UnitType.CivilAirport) < 3 &&
++      gold >= cost(UnitType.CivilAirport) * 2n
++    ) {
++      if (this.place(UnitType.CivilAirport)) return;
++    }
++    // 2) 스카이포트와 대공 터렛, 벙커: 각 1개
++    if (
++      this.count(UnitType.Airfield) < 1 &&
++      gold >= cost(UnitType.Airfield) * 3n
++    ) {
++      if (this.place(UnitType.Airfield)) return;
++    }
++    if (
++      this.count(UnitType.AATurret) < 1 &&
++      gold >= cost(UnitType.AATurret) * 3n
++    ) {
++      if (this.place(UnitType.AATurret)) return;
++    }
++    if (this.count(UnitType.Bunker) < 1 && gold >= cost(UnitType.Bunker) * 2n) {
++      if (this.place(UnitType.Bunker)) return;
++    }
++    // 3) 전쟁 중이면 탱크 (최대 2대)
++    if (
++      this.count(UnitType.Tank) < 2 &&
++      this.player.outgoingAttacks().length > 0 &&
++      gold >= cost(UnitType.Tank) * 2n
++    ) {
++      this.place(UnitType.Tank);
++    }
++  }
++
++  /** 내 땅 안에서 지을 수 있는 곳을 찾아 짓는다. */
++  private place(type: UnitType): boolean {
++    const anchor = this.anchorTile();
++    if (anchor === null) return false;
++    const map = this.mg;
++    const ax = map.x(anchor);
++    const ay = map.y(anchor);
++    for (let r = 2; r <= 14; r += 2) {
++      for (let dy = -r; dy <= r; dy += 2) {
++        for (let dx = -r; dx <= r; dx += 2) {
++          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
++          const x = ax + dx;
++          const y = ay + dy;
++          if (!map.isValidCoord(x, y)) continue;
++          const tile = map.ref(x, y);
++          if (map.owner(tile) !== this.player) continue;
++          if (this.player.canBuild(type, tile) === false) continue;
++          this.mg.addExecution(
++            new ConstructionExecution(this.player, type, tile),
++          );
++          return true;
++        }
++      }
++    }
++    return false;
++  }
++
++  private anchorTile(): TileRef | null {
++    const city = this.player.units(UnitType.City)[0];
++    if (city !== undefined) return city.tile();
++    return this.player.spawnTile() ?? null;
++  }
++}
+diff --git a/packages/engine/src/game/Game.ts b/packages/engine/src/game/Game.ts
+index 577eb2a..b9ae4f4 100644
+--- a/packages/engine/src/game/Game.ts
++++ b/packages/engine/src/game/Game.ts
+@@ -80,6 +80,11 @@ export interface UnitParamsMap {
+     trajectory: TileRef[];
+   };
+ 
++  [UnitType.BunkerBuster]: {
++    targetTile?: number;
++    trajectory: TileRef[];
++  };
++
+   [UnitType.HydrogenBomb]: {
+     targetTile?: number;
+     trajectory: TileRef[];
+@@ -112,6 +117,16 @@ export interface UnitParamsMap {
+ 
+   [UnitType.DefensePost]: Record<string, never>;
+ 
++  [UnitType.Bunker]: Record<string, never>;
++
++  [UnitType.Airfield]: Record<string, never>;
++
++  [UnitType.AATurret]: Record<string, never>;
++
++  [UnitType.Tank]: Record<string, never>;
++
++  [UnitType.CivilAirport]: Record<string, never>;
++
+   [UnitType.SAMLauncher]: Record<string, never>;
+ 
+   [UnitType.City]: Record<string, never>;
+@@ -494,6 +509,11 @@ export interface Player extends PlayerLike {
+     sourceTile: TileRef | null,
+     border: Set<number>,
+   ): Attack;
++  /** 모드 업그레이드/연구 단계 (ModCatalog 항목 번호 순서) */
++  modLevel(key: string): number;
++  setModLevel(key: string, level: number): void;
++  modLevels(): readonly number[];
++
+   outgoingAttacks(): Attack[];
+   incomingAttacks(): Attack[];
+   orderRetreat(attackID: string): void;
+diff --git a/packages/engine/src/game/GameUpdateUtils.ts b/packages/engine/src/game/GameUpdateUtils.ts
+index 45d81ff..b5d086b 100644
+--- a/packages/engine/src/game/GameUpdateUtils.ts
++++ b/packages/engine/src/game/GameUpdateUtils.ts
+@@ -65,6 +65,7 @@ export function diffPlayerUpdate(
+     prev.isLobbyCreator === next.isLobbyCreator &&
+     numberArrayEqual(prev.allies, next.allies) &&
+     numberArrayEqual(prev.targets, next.targets) &&
++    numberArrayEqual(prev.modLevels as number[], next.modLevels as number[]) &&
+     stringArrayEqual(
+       prev.outgoingAllianceRequests,
+       next.outgoingAllianceRequests,
+@@ -132,6 +133,10 @@ export function diffPlayerUpdate(
+   setIfDifferent("isLobbyCreator", prev.isLobbyCreator === next.isLobbyCreator);
+   setIfDifferent("allies", numberArrayEqual(prev.allies, next.allies));
+   setIfDifferent("targets", numberArrayEqual(prev.targets, next.targets));
++  setIfDifferent(
++    "modLevels",
++    numberArrayEqual(prev.modLevels as number[], next.modLevels as number[]),
++  );
+   setIfDifferent(
+     "outgoingAllianceRequests",
+     stringArrayEqual(
+diff --git a/packages/engine/src/game/PlayerImpl.ts b/packages/engine/src/game/PlayerImpl.ts
+index 3704dff..dd3a19c 100644
+--- a/packages/engine/src/game/PlayerImpl.ts
++++ b/packages/engine/src/game/PlayerImpl.ts
+@@ -1,3 +1,8 @@
++import {
++  BUNKER_BUSTER_RESEARCH,
++  MOD_ITEMS,
++  modIndex,
++} from "@openfront/engine-api/game/ModCatalog";
+ import { TileRef } from "@openfront/engine-api/game/GameMap";
+ import {
+   AllianceInfo,
+@@ -416,6 +421,7 @@ export class PlayerImpl implements Player {
+       betrayals: this._betrayalCount,
+       lastDeleteUnitTick: this.lastDeleteUnitTick,
+       isLobbyCreator: this.isLobbyCreator(),
++      modLevels: this._modLevels,
+     };
+   }
+ 
+@@ -509,6 +515,24 @@ export class PlayerImpl implements Player {
+     return scratch.slice(0, n);
+   }
+ 
++  private _modLevels: number[] = MOD_ITEMS.map(() => 0);
++
++  modLevel(key: string): number {
++    const i = modIndex(key);
++    return i < 0 ? 0 : (this._modLevels[i] ?? 0);
++  }
++
++  setModLevel(key: string, level: number): void {
++    const i = modIndex(key);
++    if (i < 0) return;
++    // 배열을 새로 만들어야 업데이트 비교(diff)가 변경을 알아챈다.
++    this._modLevels = this._modLevels.map((v, j) => (j === i ? level : v));
++  }
++
++  modLevels(): readonly number[] {
++    return this._modLevels;
++  }
++
+   private numUnitsConstructed: Partial<Record<UnitType, number>> = {};
+   private recordUnitConstructed(type: UnitType): void {
+     if (this.numUnitsConstructed[type] !== undefined) {
+@@ -1463,6 +1487,12 @@ export class PlayerImpl implements Player {
+     if (this.mg.config().isUnitDisabled(unitType)) {
+       return false;
+     }
++    if (
++      unitType === UnitType.BunkerBuster &&
++      this.modLevel(BUNKER_BUSTER_RESEARCH.key) === 0
++    ) {
++      return false; // 벙커 부스터는 폭탄 연구가 필요
++    }
+     const cost = knownCost ?? this.mg.unitInfo(unitType).cost(this.mg, this);
+     if (this._gold < cost) {
+       return false;
+@@ -1608,6 +1638,7 @@ export class PlayerImpl implements Player {
+         }
+         return this.nukeSpawn(targetTile, unitType);
+       case UnitType.AtomBomb:
++      case UnitType.BunkerBuster:
+       case UnitType.HydrogenBomb:
+         return this.nukeSpawn(targetTile, unitType);
+       case UnitType.MIRVWarhead:
+@@ -1625,11 +1656,20 @@ export class PlayerImpl implements Player {
+         return this.tradeShipSpawn(targetTile);
+       case UnitType.Train:
+         return this.landBasedUnitSpawn(targetTile);
++      case UnitType.Tank:
++        // 탱크는 자기 땅(육지)에만 배치
++        return this.mg.owner(targetTile) === this
++          ? this.landBasedUnitSpawn(targetTile)
++          : false;
+       case UnitType.MissileSilo:
+       case UnitType.DefensePost:
+       case UnitType.SAMLauncher:
+       case UnitType.City:
+       case UnitType.Factory:
++      case UnitType.Bunker:
++      case UnitType.Airfield:
++      case UnitType.AATurret:
++      case UnitType.CivilAirport:
+         return this.landBasedStructureSpawn(targetTile, validTiles);
+       default:
+         assertNever(unitType);
+@@ -2034,6 +2074,7 @@ export class PlayerImpl implements Player {
+       numUnitsConstructed: Object.entries(this.numUnitsConstructed).map(
+         ([type, n]) => [type as UnitType, n],
+       ),
++      modLevels: [...this._modLevels],
+     };
+   }
+ 
+@@ -2107,6 +2148,7 @@ export class PlayerImpl implements Player {
+         }
+       : (box as null);
+     this.numUnitsConstructed = Object.fromEntries(s.numUnitsConstructed);
++    this._modLevels = MOD_ITEMS.map((_, i) => s.modLevels?.[i] ?? 0);
+     this.nearbyMemo = null;
+   }
+ }
+@@ -2177,6 +2219,8 @@ export const PlayerSnapshot = snapshotType({
+       .nullable()
+       .optional(),
+     numUnitsConstructed: z.array(z.tuple([UnitTypeSchema, zInt()])),
++    // 모드: 업그레이드/연구 단계 (예전 스냅샷에는 없으므로 optional)
++    modLevels: z.array(zInt()).optional(),
+   }),
+ });
+ export type PlayerState = z.infer<typeof PlayerSnapshot.schema>;
+diff --git a/packages/engine/src/game/UnitImpl.ts b/packages/engine/src/game/UnitImpl.ts
+index 20d9b33..0b62d31 100644
+--- a/packages/engine/src/game/UnitImpl.ts
++++ b/packages/engine/src/game/UnitImpl.ts
+@@ -123,6 +123,11 @@ export class UnitImpl implements Unit {
+       case UnitType.SAMLauncher:
+       case UnitType.City:
+       case UnitType.Factory:
++      case UnitType.Bunker:
++      case UnitType.Airfield:
++      case UnitType.AATurret:
++      case UnitType.Tank:
++      case UnitType.CivilAirport:
+         this.mg.stats().unitBuild(_owner, this._type);
+     }
+   }
+@@ -257,6 +262,11 @@ export class UnitImpl implements Unit {
+       case UnitType.SAMLauncher:
+       case UnitType.City:
+       case UnitType.Factory:
++      case UnitType.Bunker:
++      case UnitType.Airfield:
++      case UnitType.AATurret:
++      case UnitType.Tank:
++      case UnitType.CivilAirport:
+         this.mg.stats().unitCapture(newOwner, this._type);
+         this.mg.stats().unitLose(this._owner, this._type);
+         break;
+@@ -390,6 +400,21 @@ export class UnitImpl implements Unit {
+         case UnitType.SAMLauncher:
+         case UnitType.Warship:
+         case UnitType.Factory:
++        case UnitType.Bunker:
++        case UnitType.Airfield:
++        case UnitType.AATurret:
++        case UnitType.Tank:
++        case UnitType.CivilAirport:
+           this.mg.stats().unitDestroy(destroyer, this._type);
+           this.mg.stats().unitLose(this.owner(), this._type);
+           break;
+diff --git a/packages/engine/src/snapshot/ExecutionRegistry.ts b/packages/engine/src/snapshot/ExecutionRegistry.ts
+index aab89b2..0531771 100644
+--- a/packages/engine/src/snapshot/ExecutionRegistry.ts
++++ b/packages/engine/src/snapshot/ExecutionRegistry.ts
+@@ -15,6 +15,14 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
+ import { EmbargoAllExecutionSnapshot } from "../execution/EmbargoAllExecution";
+ import { EmbargoExecutionSnapshot } from "../execution/EmbargoExecution";
+ import { EmojiExecutionSnapshot } from "../execution/EmojiExecution";
++import { AirliftExecutionSnapshot } from "../execution/AirliftExecution";
++import { TankExecutionSnapshot } from "../execution/TankExecution";
++import { ModEquipExecutionSnapshot } from "../execution/ModEquipExecution";
++import { ModUpgradeExecutionSnapshot } from "../execution/ModUpgradeExecution";
++import { CivilAirportExecutionSnapshot } from "../execution/CivilAirportExecution";
++import { AATurretExecutionSnapshot } from "../execution/AATurretExecution";
++import { AirfieldExecutionSnapshot } from "../execution/AirfieldExecution";
++import { BunkerExecutionSnapshot } from "../execution/BunkerExecution";
+ import { FactoryExecutionSnapshot } from "../execution/FactoryExecution";
+ import { MarkDisconnectedExecutionSnapshot } from "../execution/MarkDisconnectedExecution";
+ import { MirvExecutionSnapshot } from "../execution/MIRVExecution";
+@@ -70,6 +78,14 @@ export const EXECUTION_SNAPSHOT_TYPES = [
+   EmbargoExecutionSnapshot,
+   EmojiExecutionSnapshot,
+   FactoryExecutionSnapshot,
++  BunkerExecutionSnapshot,
++  AirfieldExecutionSnapshot,
++  AATurretExecutionSnapshot,
++  CivilAirportExecutionSnapshot,
++  ModUpgradeExecutionSnapshot,
++  ModEquipExecutionSnapshot,
++  TankExecutionSnapshot,
++  AirliftExecutionSnapshot,
+   MarkDisconnectedExecutionSnapshot,
+   MirvExecutionSnapshot,
+   MissileSiloExecutionSnapshot,
+diff --git a/resources/atlases/unit-atlas.png b/resources/atlases/unit-atlas.png
+index 93df24b3211d4f431bf369aff54b45ff5662c934..994284697cc9dc50b36ee4d3a0a331b7b305abe8 100644
+GIT binary patch
+literal 543
+zcmV+)0^t3LP)<h;3K|Lk000e1NJLTq005}~000dL1^@s6(pXN{0005zNkl<Zc%1E-
+z%Z-CD5I~15gd!-yCu+zsmz5|X2bX}9%O1A|pD2PNXvBM1O?EQO_>&NbwDTmCICv~$
+zKg{3&7%JZTcyu2Ofad59gb-ri_lNfbNr`#6T;8Ui|A|8eJ%n%*VH`&ohT(Q@Yhfkn
+zG}%g4P7`%ooO7!&pQh<<jCUV!E+|qXs`oyY$WpT^V%^WLZ?(Pa`6R{~kAZ^Hxko3c
+zs2{loYM=t<pn^(e4U{Rj>hbek*Co#z`yvTS%hW$nQs-P8hM`K-5JDWsu}D-ZWZSml
+z?-Jho*mWJ?Q7Re=%0<<<o=>+`lYTE@5BVdZCa!kj2_Zy0UJ=6u)qY<|ih^S0k_$sY
+z0e(f(I!NmQ{0YiMmEyI@&q=|>lth)<z{kGy_)qnv=H@|aWqSmi$68TKpK#B{q*zHh
+zO;baK<4LSU-}em_TgxeFJph1ZS?)el@me03%Ma&yPL`!MxR|`0>dQRO)j4a^G%wF_
+zaUM(NlcKG5TgRkOJM5f`wHH*forJ5TbhqKfrP`pYR7wUZC*^|DcwV21$shOj;`BUP
+zP71Joc~W1TY6S(T+dk3~<{T(UP85DVC8z|=NsaA6zqA)<>YweCX6ly48jtao`=lKE
+h$H_3B!1hw#gC9KAUh)G1$Ho8v002ovPDHLkV1n}j{0IO5
+
+literal 595
+zcmV-Z0<8UsP)<h;3K|Lk000e1NJLTq005i-000dL1^@s6T!IIy00001b5ch_0olnc
+ze*gdg1ZP1_K>z@;j|==^1poj5AY({UO#lFTCIA3{ga82g0001h=l}q9FaQARU;qF*
+zm;eA5aGbhPJOBUy32;bRa{vGf6951U69E94oEQKA00(qQO+^Rl1_=NXIj*wMwEzGC
+zsYygZR9M69nagbiAq<9L3z;G)g45KHV=j>>VGopml*=AdgHIGe5z`1cdF2pZ*3Kj|
+zl7DHmgTO3We;DIcO4OA1KFhDLuk?Q}008p3uKEg)-S2lT$XpOO0C+kzgrJ;r&%V9k
+zs{zykXC|TvbQc4zgbl@k&U>F{9M6eXIQHZ5)tvA1{Y{{IQMXoywKl&3(?}GyT6+Z1
+zC>oXh#u&-Z&I+8hHaq87&;dXWAxuF>;aZku8anTNHpVD?W}!jYO6Yo#45Jx+Kg&fU
+z6LIXgK?DFYK6}~RTCm|UH?v5D4WVg$868JqE1|2|w;VZga0yury4oCgwAPN;-dZ>t
+zfdX_ir07R3bh9VVtj#arVvL%?6Js3aE9<&y3TZ0`qvMoPYTLFSpFR6l-ZaXmQcB%+
+zZH^MMvfW!tN{OB0X{`^>3DJ);{-mP*+QUZob_92EGbIj;UbS6-3+>H8qesuNwH&U5
+zjoO#vDP-l5Dwl=>E)87RxFwBp7tHP?boR*UWq%L0-i?%#zlly*7O9m+qz)&*{V9C%
+hPlHILq*ix?z5%(ZI9}wl%jp0B002ovPDHLkV1i1X^3ebQ
+
+diff --git a/resources/lang/en.json b/resources/lang/en.json
+index b0eca7f..5a0bd41 100644
+--- a/resources/lang/en.json
++++ b/resources/lang/en.json
+@@ -205,8 +205,13 @@
+   },
+   "build_menu": {
+     "desc": {
++      "aa_turret": "Shoots down enemy Airborne planes (13s cooldown); upgrades extend range",
++      "airfield": "Holds fighters (2 per level), builds 1 every 60s; unlocks Airborne",
+       "atom_bomb": "Small explosion",
++      "bunker": "Reduces troop losses from bombing by 90%",
++      "bunker_buster": "Destroys all bunkers in a small radius",
+       "city": "Increases max population",
++      "civil_airport": "Earns gold by air trade every 10s; more with other nations' airports. Upgradable",
+       "defense_post": "Increases defenses of nearby borders",
+       "factory": "Creates railroads and spawns trains",
+       "hydrogen_bomb": "Large explosion",
+@@ -214,6 +219,7 @@
+       "missile_silo": "Used to launch nukes",
+       "port": "Sends trade ships to generate gold",
+       "sam_launcher": "Defends against incoming nukes",
++      "tank": "Moves to the front in wars; nearby attacks lose fewer troops and advance faster",
+       "warship": "Captures trade ships, destroys ships and boats"
+     },
+     "not_enough_money": "Not enough money",
+@@ -2221,6 +2227,136 @@
+     "title_clanwars": "Clan Wars Ranked Matchmaking (ALPHA)",
+     "waiting_for_game": "Waiting for game to start..."
+   },
++  "mod_panel": {
++    "bomb_default": "Standard bomb",
++    "bomb_hint": "Each slot holds one bomb. Research a bomb, then equip it.",
++    "equip": "Equip",
++    "equipped": "Equipped",
++    "item": {
++      "air_cap": {
++        "desc": "Each level lets one Airborne sortie carry more soldiers.",
++        "name": "Airborne Capacity"
++      },
++      "bomb_boosted": {
++        "desc": "A stronger standard hydrogen bomb at higher cost. Hydrogen slot.",
++        "name": "Boosted Hydrogen Bomb"
++      },
++      "bomb_bunker_buster": {
++        "desc": "Destroys every bunker in a small radius. Fired from a missile silo for 40M.",
++        "name": "Bunker Buster"
++      },
++      "bomb_cluster": {
++        "desc": "Wide but shallow blast. Fewer kills, bigger area. Atom slot.",
++        "name": "Cluster Bomb"
++      },
++      "bomb_dirty": {
++        "desc": "Large contaminated area, weak against troops. Hydrogen slot.",
++        "name": "Dirty Bomb"
++      },
++      "bomb_emp": {
++        "desc": "Wrecks buildings but barely hurts troops. Atom slot.",
++        "name": "EMP Bomb"
++      },
++      "bomb_fuel_air": {
++        "desc": "Broad blast, harsh on troops. Hydrogen slot.",
++        "name": "Fuel-Air Bomb"
++      },
++      "bomb_mirv_precise": {
++        "desc": "Tight, deep warhead blasts. MIRV slot.",
++        "name": "Precision Warheads"
++      },
++      "bomb_mirv_wide": {
++        "desc": "Wide, shallow warhead blasts. MIRV slot.",
++        "name": "Wide-Area Warheads"
++      },
++      "bomb_neutron": {
++        "desc": "Kills troops, leaves buildings standing. Atom slot.",
++        "name": "Neutron Bomb"
++      },
++      "bomb_tactical": {
++        "desc": "Small and cheap. Half price. Atom slot.",
++        "name": "Tactical Nuke"
++      },
++      "bomb_thermobaric": {
++        "desc": "Deadly to troops but a smaller radius. Atom slot.",
++        "name": "Thermobaric Bomb"
++      },
++      "bomb_tsar": {
++        "desc": "The biggest blast ever built. Costs triple. Hydrogen slot.",
++        "name": "Tsar Bomba"
++      },
++      "tank_tech": {
++        "desc": "Each level makes your tanks stronger: fewer troop losses and faster advances nearby.",
++        "name": "Tank Research"
++      },
++      "troop_atk": {
++        "desc": "Each level: +10% attack. Enemies lose more troops and you advance faster.",
++        "name": "Troop Attack"
++      },
++      "troop_def": {
++        "desc": "Each level: +10% defense. Attackers lose more troops and advance slower.",
++        "name": "Troop Defense"
++      },
++      "troop_hp": {
++        "desc": "Each level: +10% hardiness. Your troops die less in battle.",
++        "name": "Troop Health"
++      },
++      "weapon_assault_rifle": {
++        "desc": "Standard-issue rifles for every soldier.",
++        "name": "Assault Rifle"
++      },
++      "weapon_atgm": {
++        "desc": "Precision-guided anti-armor and anti-personnel missiles.",
++        "name": "Guided Missiles"
++      },
++      "weapon_howitzer": {
++        "desc": "Self-propelled artillery pounding enemy lines.",
++        "name": "Howitzer"
++      },
++      "weapon_machine_gun": {
++        "desc": "Suppressive fire that cuts down advancing enemies.",
++        "name": "Machine Gun"
++      },
++      "weapon_mortar": {
++        "desc": "Cheap indirect fire behind the front line.",
++        "name": "Mortar"
++      },
++      "weapon_railgun": {
++        "desc": "Experimental electromagnetic cannons. The strongest weapon.",
++        "name": "Railgun"
++      },
++      "weapon_rocket_launcher": {
++        "desc": "Heavy shoulder-fired rockets against defenders.",
++        "name": "Rocket Launcher"
++      },
++      "weapon_sniper_rifle": {
++        "desc": "Precise long-range kills on enemy troops.",
++        "name": "Sniper Rifle"
++      }
++    },
++    "maxed": "Max level",
++    "owned": "Researched",
++    "price": "Price",
++    "radius": "Radius",
++    "research": "Research",
++    "slot": {
++      "abomb": "Atom bomb slot",
++      "hbomb": "Hydrogen bomb slot",
++      "mirv": "MIRV slot",
++      "special": "Special"
++    },
++    "spares_buildings": "spares buildings",
++    "stat_atk": "Attack",
++    "stat_def": "Defense",
++    "stat_hp": "Health",
++    "tab_bomb": "Bombs",
++    "tab_supply": "Supplies",
++    "tab_troop": "Troops",
++    "tab_weapon": "Weapons",
++    "title": "Upgrades",
++    "troop_dmg": "Troop damage",
++    "upgrade": "Upgrade"
++  },
+   "mode_selector": {
+     "lobbies_unreachable": "Can't reach the public lobbies right now",
+     "offline_lobbies": "Public lobbies aren't available while you're offline",
+@@ -3190,9 +3326,14 @@
+     "title": "Tutorial"
+   },
+   "unit_type": {
++    "aa_turret": "AA Turret",
++    "airfield": "Skyport",
+     "atom_bomb": "Atom Bomb",
+     "boat": "Boat",
++    "bunker": "Bunker",
++    "bunker_buster": "Bunker Buster",
+     "city": "City",
++    "civil_airport": "Civil Airport",
+     "defense_post": "Defense Post",
+     "factory": "Factory",
+     "hydrogen_bomb": "Hydrogen Bomb",
+@@ -3200,6 +3341,7 @@
+     "missile_silo": "Missile Silo",
+     "port": "Port",
+     "sam_launcher": "SAM Launcher",
++    "tank": "Tank",
+     "warship": "Warship"
+   },
+   "update_available": {
+diff --git a/resources/lang/ko.json b/resources/lang/ko.json
+index 4ad2d5a..6a4295f 100644
+--- a/resources/lang/ko.json
++++ b/resources/lang/ko.json
+@@ -183,7 +183,13 @@
+       "missile_silo": "핵 미사일 발사를 위해 사용됩니다",
+       "port": "무역선을 보내 금을 생산합니다",
+       "sam_launcher": "들어오는 핵미사일을 방어합니다",
+-      "warship": "무역선을 나포하고, 수송선과 함선을 파괴합니다"
++      "warship": "무역선을 나포하고, 수송선과 함선을 파괴합니다",
++      "bunker": "폭격으로 인한 병력 손실을 90% 줄여줘요",
++      "airfield": "전투기를 보관(레벨당 2대)하고 60초마다 1대 생산. 에어본을 쓰려면 필요해요",
++      "aa_turret": "적 에어본을 격추해요 (쿨타임 13초). 업그레이드하면 범위가 넓어져요",
++      "bunker_buster": "작은 범위의 벙커를 모두 철거해요",
++      "tank": "전쟁이 나면 전선으로 이동해요. 근처 전투에서 병력 손실이 줄고 더 빨리 전진해요",
++      "civil_airport": "10초마다 비행기 무역으로 돈을 벌어요. 다른 나라 공항이 있으면 더 벌어요. 업그레이드 가능"
+     },
+     "not_enough_money": "돈이 부족합니다",
+     "upgrade_amount": "x{amount}",
+@@ -1839,6 +1845,136 @@
+     "delete_unit_title": "유닛 삭제",
+     "upgrade_x": "업그레이드 x{amount}"
+   },
++  "mod_panel": {
++    "title": "업그레이드",
++    "tab_troop": "병사 강화",
++    "tab_weapon": "무기",
++    "tab_supply": "군수",
++    "tab_bomb": "폭탄",
++    "upgrade": "업그레이드",
++    "research": "연구",
++    "maxed": "최대 단계",
++    "owned": "연구 완료",
++    "equip": "장착",
++    "equipped": "장착 중",
++    "stat_atk": "공격력",
++    "stat_hp": "체력",
++    "stat_def": "방어력",
++    "radius": "반경",
++    "troop_dmg": "병력 피해",
++    "price": "가격",
++    "spares_buildings": "건물 보존",
++    "bomb_default": "기본 폭탄",
++    "bomb_hint": "슬롯은 3개뿐이에요. 폭탄을 연구한 뒤 슬롯에 장착해서 써요.",
++    "slot": {
++      "abomb": "원자폭탄 슬롯",
++      "hbomb": "수소폭탄 슬롯",
++      "mirv": "다탄두 미사일 슬롯",
++      "special": "특수"
++    },
++    "item": {
++      "troop_hp": {
++        "name": "병사 체력",
++        "desc": "단계마다 체력 +10%. 전투에서 우리 병사가 덜 죽어요."
++      },
++      "troop_atk": {
++        "name": "병사 공격력",
++        "desc": "단계마다 공격력 +10%. 적이 더 많이 죽고 더 빨리 전진해요."
++      },
++      "troop_def": {
++        "name": "병사 방어력",
++        "desc": "단계마다 방어력 +10%. 공격자가 더 많이 죽고 더 느리게 전진해요."
++      },
++      "weapon_assault_rifle": {
++        "name": "돌격소총",
++        "desc": "모든 병사에게 지급하는 기본 소총."
++      },
++      "weapon_machine_gun": {
++        "name": "기관총",
++        "desc": "돌격하는 적을 제압하는 연속 사격."
++      },
++      "weapon_sniper_rifle": {
++        "name": "저격소총",
++        "desc": "먼 거리에서 적 병사를 정확히 저격."
++      },
++      "weapon_mortar": {
++        "name": "박격포",
++        "desc": "전선 뒤에서 쏘는 값싼 곡사 화력."
++      },
++      "weapon_rocket_launcher": {
++        "name": "로켓포",
++        "desc": "수비 병력을 부수는 휴대용 로켓."
++      },
++      "weapon_howitzer": {
++        "name": "자주포",
++        "desc": "적 진지를 두드리는 자주 곡사포."
++      },
++      "weapon_atgm": {
++        "name": "유도 미사일",
++        "desc": "정밀 유도되는 대전차·대인 미사일."
++      },
++      "weapon_railgun": {
++        "name": "레일건",
++        "desc": "실험용 전자기 포. 가장 강한 무기."
++      },
++      "tank_tech": {
++        "name": "탱크 연구",
++        "desc": "단계마다 탱크가 좋아져요. 근처 전투에서 병력 손실이 더 줄고 더 빨리 전진해요."
++      },
++      "air_cap": {
++        "name": "수송기 적재량",
++        "desc": "단계마다 에어본이 한 번에 더 많은 병사를 실어요."
++      },
++      "bomb_cluster": {
++        "name": "클러스터탄",
++        "desc": "넓지만 얕은 폭발. 피해는 적고 범위는 넓음. (원자폭탄 슬롯)"
++      },
++      "bomb_thermobaric": {
++        "name": "열압력탄",
++        "desc": "병력에 치명적이지만 범위가 좁음. (원자폭탄 슬롯)"
++      },
++      "bomb_tactical": {
++        "name": "전술핵",
++        "desc": "작고 값쌈. 가격 절반. (원자폭탄 슬롯)"
++      },
++      "bomb_neutron": {
++        "name": "중성자탄",
++        "desc": "병력만 죽이고 건물은 그대로 둠. (원자폭탄 슬롯)"
++      },
++      "bomb_emp": {
++        "name": "EMP탄",
++        "desc": "건물은 부수지만 병력 피해는 거의 없음. (원자폭탄 슬롯)"
++      },
++      "bomb_tsar": {
++        "name": "차르봄바",
++        "desc": "역대 최대 폭발. 가격은 3배. (수소폭탄 슬롯)"
++      },
++      "bomb_dirty": {
++        "name": "방사능탄",
++        "desc": "넓게 오염시키지만 병력 피해는 약함. (수소폭탄 슬롯)"
++      },
++      "bomb_fuel_air": {
++        "name": "연료기화탄",
++        "desc": "넓은 폭발, 병력에 가혹함. (수소폭탄 슬롯)"
++      },
++      "bomb_boosted": {
++        "name": "개량형 수소폭탄",
++        "desc": "표준 수소폭탄의 강화판. 값이 비쌈. (수소폭탄 슬롯)"
++      },
++      "bomb_mirv_precise": {
++        "name": "정밀 다탄두",
++        "desc": "좁고 깊게 터지는 탄두. (다탄두 슬롯)"
++      },
++      "bomb_mirv_wide": {
++        "name": "광역 다탄두",
++        "desc": "넓고 얕게 터지는 탄두. (다탄두 슬롯)"
++      },
++      "bomb_bunker_buster": {
++        "name": "벙커 부스터",
++        "desc": "작은 범위의 벙커를 모두 철거해요. 미사일 발사대에서 40M에 발사."
++      }
++    }
++  },
+   "relation": {
+     "default": "기본",
+     "distrustful": "신뢰하지 않음",
+@@ -2196,7 +2332,13 @@
+     "missile_silo": "미사일 발사대",
+     "port": "항구",
+     "sam_launcher": "지대공 미사일 발사대",
+-    "warship": "군함"
++    "warship": "군함",
++    "bunker": "벙커",
++    "airfield": "스카이포트",
++    "aa_turret": "대공 터렛",
++    "bunker_buster": "벙커 부스터",
++    "tank": "탱크",
++    "civil_airport": "민간 공항"
+   },
+   "update_available": {
+     "desktop": "OpenFront의 새로운 버전을 이용할 수 있습니다. 백그라운드에서 다운로드되며, 준비가 완료되면 업데이트 표시줄에서 새로고침하세요.",
+diff --git a/src/client/InputHandler.ts b/src/client/InputHandler.ts
+index 01f2a04..fea59dd 100644
+--- a/src/client/InputHandler.ts
++++ b/src/client/InputHandler.ts
+@@ -331,6 +331,8 @@ export class AutoUpgradeEvent implements GameEvent {
+   ) {}
+ }
+ 
++export class ToggleModPanelEvent implements GameEvent {}
++
+ export class ToggleCoordinateGridEvent implements GameEvent {
+   constructor(public readonly enabled: boolean) {}
+ }
+@@ -914,6 +916,14 @@ export class InputHandler {
+           }
+         }
+ 
++        if (
++          this.keybindMatchesEvent(e, this.keybinds.modPanel) &&
++          !e.repeat
++        ) {
++          e.preventDefault();
++          this.eventBus.emit(new ToggleModPanelEvent());
++        }
++
+         if (
+           this.keybindMatchesEvent(e, this.keybinds.coordinateGrid) &&
+           !e.repeat
+diff --git a/src/client/Transport.ts b/src/client/Transport.ts
+index 5f9e3d7..6a2b291 100644
+--- a/src/client/Transport.ts
++++ b/src/client/Transport.ts
+@@ -136,6 +136,24 @@ export class SendBoatAttackIntentEvent implements GameEvent {
+   ) {}
+ }
+ 
++export class SendModUpgradeIntentEvent implements GameEvent {
++  constructor(public readonly key: string) {}
++}
++
++export class SendModEquipIntentEvent implements GameEvent {
++  constructor(
++    public readonly slot: string,
++    public readonly variant: number,
++  ) {}
++}
++
++export class SendAirliftIntentEvent implements GameEvent {
++  constructor(
++    public readonly dst: TileRef,
++    public readonly troops: number,
++  ) {}
++}
++
+ export class BuildUnitIntentEvent implements GameEvent {
+   constructor(
+     public readonly unit: UnitType,
+@@ -327,6 +345,15 @@ export class Transport {
+     this.subscribe(SendBoatAttackIntentEvent, (e) =>
+       this.onSendBoatAttackIntent(e),
+     );
++    this.subscribe(SendModUpgradeIntentEvent, (e) =>
++      this.sendIntent({ type: "modUpgrade", key: e.key }),
++    );
++    this.subscribe(SendModEquipIntentEvent, (e) =>
++      this.sendIntent({ type: "modEquip", slot: e.slot, variant: e.variant }),
++    );
++    this.subscribe(SendAirliftIntentEvent, (e) =>
++      this.onSendAirliftIntent(e),
++    );
+     this.subscribe(SendTargetPlayerIntentEvent, (e) =>
+       this.onSendTargetPlayerIntent(e),
+     );
+@@ -833,6 +860,15 @@ export class Transport {
+     });
+   }
+ 
++  private onSendAirliftIntent(event: SendAirliftIntentEvent) {
++    if (!this.isSendableTroops("airlift", event.troops)) return;
++    this.sendIntent({
++      type: "airlift",
++      troops: event.troops,
++      dst: event.dst,
++    });
++  }
++
+   private onSendUpgradeStructureIntent(event: SendUpgradeStructureIntentEvent) {
+     this.sendIntent({
+       type: "upgrade_structure",
+diff --git a/src/client/UserSettings.ts b/src/client/UserSettings.ts
+index af06ea3..7790d59 100644
+--- a/src/client/UserSettings.ts
++++ b/src/client/UserSettings.ts
+@@ -27,7 +27,8 @@ export function getDefaultKeybinds(isMac: boolean): Record<string, string> {
+   return {
+     toggleView: "Space",
+     preventStacking: "KeyH",
+-    coordinateGrid: "KeyM",
++    coordinateGrid: "Shift+KeyG",
++    modPanel: "KeyM",
+     performanceOverlay: "Shift+KeyD",
+     buildCity: "Digit1",
+     buildFactory: "Digit2",
+diff --git a/src/client/components/baseComponents/stats/PlayerStatsTable.ts b/src/client/components/baseComponents/stats/PlayerStatsTable.ts
+index 728a699..5c9efef 100644
+--- a/src/client/components/baseComponents/stats/PlayerStatsTable.ts
++++ b/src/client/components/baseComponents/stats/PlayerStatsTable.ts
+@@ -21,6 +21,11 @@ const BUILDING_ORDER = {
+   defp: 4,
+   silo: 5,
+   saml: 6,
++  bunk: 7,
++  airf: 8,
++  aatr: 9,
++  tank: 10,
++  capt: 11,
+ } as const satisfies Record<
+   Exclude<(typeof otherUnits)[number], "wshp">,
+   number
+@@ -47,6 +52,12 @@ const UNIT_LABEL_KEYS = {
+   hbomb: "unit_type.hydrogen_bomb",
+   mirv: "unit_type.mirv",
+   mirvw: "player_stats_table.unit.mirvw",
++  bunk: "unit_type.bunker",
++  bbust: "unit_type.bunker_buster",
++  airf: "unit_type.airfield",
++  aatr: "unit_type.aa_turret",
++  tank: "unit_type.tank",
++  capt: "unit_type.civil_airport",
+   trade: "player_stats_table.unit.trade",
+   trans: "player_stats_table.unit.trans",
+ } as const satisfies Record<
+diff --git a/src/client/hud/GameRenderer.ts b/src/client/hud/GameRenderer.ts
+index c0fe900..8028834 100644
+--- a/src/client/hud/GameRenderer.ts
++++ b/src/client/hud/GameRenderer.ts
+@@ -43,6 +43,7 @@ import { OnboardingOverlay } from "./layers/OnboardingOverlay";
+ import { PerformanceOverlay } from "./layers/PerformanceOverlay";
+ import { PlayerInfoOverlay } from "./layers/PlayerInfoOverlay";
+ import { PlayerPanel } from "./layers/PlayerPanel";
++import { ModPanel } from "./layers/ModPanel";
+ import { ReplayPanel } from "./layers/ReplayPanel";
+ import { SettingsModal } from "./layers/SettingsModal";
+ import { SpawnTimer } from "./layers/SpawnTimer";
+@@ -181,6 +182,13 @@ export function createRenderer(
+   replayPanel.eventBus = eventBus;
+   replayPanel.game = game;
+ 
++  const modPanel = document.querySelector("mod-panel") as ModPanel;
++  if (!(modPanel instanceof ModPanel)) {
++    console.error("mod panel not found");
++  }
++  modPanel.eventBus = eventBus;
++  modPanel.game = game;
++
+   const gameRightSidebar = document.querySelector(
+     "game-right-sidebar",
+   ) as GameRightSidebar;
+@@ -377,6 +385,7 @@ export function createRenderer(
+     winModal,
+     newLobbyPrompt,
+     replayPanel,
++    modPanel,
+     settingsModal,
+     playerPanel,
+     headsUpMessage,
+diff --git a/src/client/hud/layers/BuildMenu.ts b/src/client/hud/layers/BuildMenu.ts
+index 617b33e..c50c16d 100644
+--- a/src/client/hud/layers/BuildMenu.ts
++++ b/src/client/hud/layers/BuildMenu.ts
+@@ -55,6 +55,13 @@ const buildTable: BuildItemDisplay[][] = [
+       key: "unit_type.atom_bomb",
+       countable: false,
+     },
++    {
++      unitType: UnitType.BunkerBuster,
++      icon: atomBombIcon,
++      description: "build_menu.desc.bunker_buster",
++      key: "unit_type.bunker_buster",
++      countable: false,
++    },
+     {
+       unitType: UnitType.MIRV,
+       icon: mirvIcon,
+@@ -104,6 +111,41 @@ const buildTable: BuildItemDisplay[][] = [
+       key: "unit_type.defense_post",
+       countable: true,
+     },
++    {
++      unitType: UnitType.CivilAirport,
++      icon: portIcon,
++      description: "build_menu.desc.civil_airport",
++      key: "unit_type.civil_airport",
++      countable: true,
++    },
++    {
++      unitType: UnitType.Tank,
++      icon: shieldIcon,
++      description: "build_menu.desc.tank",
++      key: "unit_type.tank",
++      countable: true,
++    },
++    {
++      unitType: UnitType.AATurret,
++      icon: shieldIcon,
++      description: "build_menu.desc.aa_turret",
++      key: "unit_type.aa_turret",
++      countable: true,
++    },
++    {
++      unitType: UnitType.Airfield,
++      icon: factoryIcon,
++      description: "build_menu.desc.airfield",
++      key: "unit_type.airfield",
++      countable: true,
++    },
++    {
++      unitType: UnitType.Bunker,
++      icon: shieldIcon,
++      description: "build_menu.desc.bunker",
++      key: "unit_type.bunker",
++      countable: true,
++    },
+     {
+       unitType: UnitType.City,
+       icon: cityIcon,
+diff --git a/src/client/hud/layers/ModPanel.ts b/src/client/hud/layers/ModPanel.ts
+new file mode 100644
+index 0000000..e551c1c
+--- /dev/null
++++ b/src/client/hud/layers/ModPanel.ts
+@@ -0,0 +1,326 @@
++import {
++  airCapacity,
++  BOMB_SLOTS,
++  BOMB_VARIANTS,
++  BombSlot,
++  BUNKER_BUSTER_RESEARCH,
++  bestWeaponMultiplier,
++  MOD_ITEMS,
++  ModGroup,
++  ModItem,
++  slotKey,
++  tankLossFactor,
++  troopUpgradeMultiplier,
++  WEAPONS,
++} from "@openfront/engine-api/game/ModCatalog";
++import { EventBus } from "@openfront/shared/EventBus";
++import { html, LitElement } from "lit";
++import { customElement, state } from "lit/decorators.js";
++import { Controller } from "../../Controller";
++import { ToggleModPanelEvent } from "../../InputHandler";
++import {
++  SendModEquipIntentEvent,
++  SendModUpgradeIntentEvent,
++} from "../../Transport";
++import { translateText } from "../../Utils";+import { GameView } from "../../view";
++
++/** 골드를 M/K 단위로 줄여 쓴다 (예: 37500000 -> 37.5M) */
++export function formatM(gold: bigint): string {
++  const n = Number(gold);
++  if (n >= 1_000_000) {
++    return `${Number((n / 1_000_000).toFixed(3))}M`;
++  }
++  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
++  return `${n}`;
++}
++
++type Tab = Exclude<ModGroup, "slot">;
++const TABS: Tab[] = ["troop", "weapon", "supply", "bomb"];
++
++/**
++ * M 키로 여는 업그레이드/연구 창.
++ * 탭: 병사 강화 / 무기 / 군수(탱크·수송기) / 폭탄(슬롯 장착)
++ */
++@customElement("mod-panel")
++export class ModPanel extends LitElement implements Controller {
++  public game: GameView;
++  public eventBus: EventBus;
++
++  @state() private visible = false;
++  @state() private tab: Tab = "troop";
++
++  createRenderRoot() {
++    return this;
++  }
++
++  init() {
++    this.eventBus.on(ToggleModPanelEvent, () => {
++      this.visible = !this.visible;
++    });
++  }
++
++  getTickIntervalMs() {
++    return 250;
++  }
++
++  tick() {
++    if (this.visible) this.requestUpdate();
++  }
++
++  private buy(key: string) {
++    this.eventBus.emit(new SendModUpgradeIntentEvent(key));
++  }
++
++  private equip(slot: BombSlot, variant: number) {
++    this.eventBus.emit(new SendModEquipIntentEvent(slot, variant));
++  }
++
++  private level(key: string): number {
++    return this.game?.myPlayer()?.modLevel(key) ?? 0;
++  }
++
++  private gold(): bigint {
++    return this.game?.myPlayer()?.gold() ?? 0n;
++  }
++
++  private buyButton(item: ModItem) {
++    const level = this.level(item.key);
++    const maxed = level >= item.maxLevel;
++    const cost = maxed ? 0n : item.costOfNext(level);
++    const canAfford = !maxed && this.gold() >= cost;
++    const label = maxed
++      ? translateText(
++          item.maxLevel === 1 ? "mod_panel.owned" : "mod_panel.maxed",
++        )
++      : `${translateText(item.group === "troop" ? "mod_panel.upgrade" : "mod_panel.research")} · ${formatM(cost)}`;
++    return html`<button
++      class="py-1 px-2 rounded-sm text-white text-sm border transition ${
++        canAfford
++          ? "border-gray-200 hover:bg-gray-500"
++          : "border-gray-600 opacity-50"
++      }"
++      ?disabled=${!canAfford}
++      @click=${() => this.buy(item.key)}
++    >
++      ${label}
++    </button>`;
++  }
++
++  private card(title: string, right: string, body: unknown, action: unknown) {
++    return html`<div class="p-3 rounded-lg bg-gray-700/70 flex flex-col gap-2">
++      <div class="flex justify-between items-center text-white">
++        <span class="font-bold">${title}</span>
++        <span class="text-sm text-gray-300">${right}</span>
++      </div>
++      ${body} ${action}
++    </div>`;
++  }
++
++  private pips(level: number, max: number) {
++    return html`<div class="flex gap-1">
++      ${Array.from({ length: max }, (_, i) => i < level).map(
++        (on) =>
++          html`<div
++            class="h-2 flex-1 rounded-sm ${
++              on ? "bg-malibu-blue" : "bg-gray-500"
++            }"
++          ></div>`,
++      )}
++    </div>`;
++  }
++
++  private desc(key: string) {
++    return html`<div class="text-xs text-gray-300">
++      ${translateText(`mod_panel.item.${key}.desc`)}
++    </div>`;
++  }
++
++  /** 우리 병사 전투력 요약 */
++  private strength() {
++    const pct = (m: number) => `×${m.toFixed(2)}`;
++    const atk =
++      troopUpgradeMultiplier(this.level("troop_atk")) *
++      bestWeaponMultiplier((k) => this.level(k));
++    const hp = troopUpgradeMultiplier(this.level("troop_hp"));
++    const def = troopUpgradeMultiplier(this.level("troop_def"));
++    return html`<div
++      class="grid grid-cols-3 gap-2 text-center text-white text-sm p-2 rounded-lg bg-gray-900/60"
++    >
++      <div>
++        <div class="text-xs text-gray-400">
++          ${translateText("mod_panel.stat_atk")}
++        </div>
++        ${pct(atk)}
++      </div>
++      <div>
++        <div class="text-xs text-gray-400">
++          ${translateText("mod_panel.stat_hp")}
++        </div>
++        ${pct(hp)}
++      </div>
++      <div>
++        <div class="text-xs text-gray-400">
++          ${translateText("mod_panel.stat_def")}
++        </div>
++        ${pct(def)}
++      </div>
++    </div>`;
++  }
++
++  private renderTroop() {
++    return html`${this.strength()}
++    ${MOD_ITEMS.filter((i) => i.group === "troop").map((item) => {
++      const lv = this.level(item.key);
++      return this.card(
++        translateText(`mod_panel.item.${item.key}.name`),
++        `Lv ${lv}/${item.maxLevel} · +${Math.round((troopUpgradeMultiplier(lv) - 1) * 100)}%`,
++        html`${this.desc(item.key)}${this.pips(lv, item.maxLevel)}`,
++        this.buyButton(item),
++      );
++    })}`;
++  }
++
++  private renderWeapons() {
++    return html`${this.strength()}
++    ${WEAPONS.map((w) => {
++      const item = MOD_ITEMS.find((i) => i.key === w.key)!;
++      return this.card(
++        translateText(`mod_panel.item.${w.key}.name`),
++        `${translateText("mod_panel.stat_atk")} ×${w.attackMultiplier.toFixed(2)}`,
++        this.desc(w.key),
++        this.buyButton(item),
++      );
++    })}`;
++  }
++
++  private renderSupply() {
++    const tank = this.level("tank_tech");
++    const air = this.level("air_cap");
++    const tankItem = MOD_ITEMS.find((i) => i.key === "tank_tech")!;
++    const airItem = MOD_ITEMS.find((i) => i.key === "air_cap")!;
++    return html`${this.card(
++      translateText("mod_panel.item.tank_tech.name"),
++      `Lv ${tank}/${tankItem.maxLevel} · ${Math.round((1 - tankLossFactor(tank)) * 100)}%`,
++      html`${this.desc("tank_tech")}${this.pips(tank, tankItem.maxLevel)}`,
++      this.buyButton(tankItem),
++    )}
++    ${this.card(
++      translateText("mod_panel.item.air_cap.name"),
++      `Lv ${air}/${airItem.maxLevel} · ${airCapacity(air).toLocaleString()}`,
++      html`${this.desc("air_cap")}${this.pips(air, airItem.maxLevel)}`,
++      this.buyButton(airItem),
++    )}`;
++  }
++
++  private renderBombs() {
++    const buster = MOD_ITEMS.find((i) => i.key === BUNKER_BUSTER_RESEARCH.key)!;
++    return html`<div class="text-xs text-gray-300">
++        ${translateText("mod_panel.bomb_hint")}
++      </div>
++      ${BOMB_SLOTS.map((slot) => {
++        const equippedN = this.level(slotKey(slot));
++        return html`<div class="text-white font-bold mt-1">
++            ${translateText(`mod_panel.slot.${slot}`)}
++          </div>
++          ${this.card(
++            translateText("mod_panel.bomb_default"),
++            equippedN === 0 ? translateText("mod_panel.equipped") : "",
++            html``,
++            equippedN === 0
++              ? html``
++              : html`<button
++                  class="py-1 px-2 rounded-sm text-white text-sm border border-gray-200 hover:bg-gray-500"
++                  @click=${() => this.equip(slot, 0)}
++                >
++                  ${translateText("mod_panel.equip")}
++                </button>`,
++          )}
++          ${BOMB_VARIANTS.map((v, idx) => ({ v, idx }))
++            .filter(({ v }) => v.slot === slot)
++            .map(({ v, idx }) => {
++              const item = MOD_ITEMS.find((i) => i.key === v.key)!;
++              const owned = this.level(v.key) > 0;
++              const on = equippedN === idx + 1;
++              const stats = `${translateText("mod_panel.radius")} ×${v.outerMul} · ${translateText("mod_panel.troop_dmg")} ×${v.troopMul} · ${translateText("mod_panel.price")} ×${v.priceMul}${v.destroysStructures ? "" : ` · ${translateText("mod_panel.spares_buildings")}`}`;
++              return this.card(
++                translateText(`mod_panel.item.${v.key}.name`),
++                on ? translateText("mod_panel.equipped") : "",
++                html`${this.desc(v.key)}
++                  <div class="text-xs text-yellow-200">${stats}</div>`,
++                !owned
++                  ? this.buyButton(item)
++                  : on
++                    ? html``
++                    : html`<button
++                        class="py-1 px-2 rounded-sm text-white text-sm border border-gray-200 hover:bg-gray-500"
++                        @click=${() => this.equip(slot, idx + 1)}
++                      >
++                        ${translateText("mod_panel.equip")}
++                      </button>`,
++              );
++            })}`;
++      })}
++      <div class="text-white font-bold mt-1">
++        ${translateText("mod_panel.slot.special")}
++      </div>
++      ${this.card(
++        translateText(`mod_panel.item.${buster.key}.name`),
++        "40M",
++        this.desc(buster.key),
++        this.buyButton(buster),
++      )}`;
++  }
++
++  render() {
++    if (!this.visible || !this.game?.myPlayer()) return html``;
++    const body =
++      this.tab === "troop"
++        ? this.renderTroop()
++        : this.tab === "weapon"
++          ? this.renderWeapons()
++          : this.tab === "supply"
++            ? this.renderSupply()
++            : this.renderBombs();
++    return html`
++      <div
++        class="fixed inset-0 z-1100 flex items-center justify-center pointer-events-none"
++        @contextmenu=${(e: Event) => e.preventDefault()}
++      >
++        <div
++          class="pointer-events-auto w-[min(94vw,28rem)] max-h-[82vh] overflow-y-auto p-3 rounded-lg bg-gray-800/95 backdrop-blur-sm shadow-lg flex flex-col gap-3"
++        >
++          <div class="flex justify-between items-center text-white">
++            <span class="text-lg font-bold"
++              >${translateText("mod_panel.title")}</span
++            >
++            <span class="text-sm text-yellow-300">${formatM(this.gold())}</span>
++            <button
++              class="px-2 text-xl"
++              @click=${() => (this.visible = false)}
++              aria-label="close"
++            >
++              ×
++            </button>
++          </div>
++          <div class="flex gap-1">
++            ${TABS.map(
++              (g) =>
++                html`<button
++                  class="flex-1 py-1 text-xs text-white rounded-sm border ${
++                    this.tab === g
++                      ? "bg-malibu-blue border-malibu-blue"
++                      : "border-gray-500"
++                  }"
++                  @click=${() => (this.tab = g)}
++                >
++                  ${translateText(`mod_panel.tab_${g}`)}
++                </button>`,
++            )}
++          </div>
++          ${body}
++        </div>
++      </div>
++    `;
++  }
++}
+diff --git a/src/client/hud/layers/PlayerActionHandler.ts b/src/client/hud/layers/PlayerActionHandler.ts
+index d8ef5a2..11dca79 100644
+--- a/src/client/hud/layers/PlayerActionHandler.ts
++++ b/src/client/hud/layers/PlayerActionHandler.ts
+@@ -4,6 +4,7 @@ import {
+   SendAllianceExtensionIntentEvent,
+   SendAllianceRequestIntentEvent,
+   SendAttackIntentEvent,
++  SendAirliftIntentEvent,
+   SendBoatAttackIntentEvent,
+   SendBreakAllianceIntentEvent,
+   SendDeleteUnitIntentEvent,
+@@ -41,6 +42,15 @@ export class PlayerActionHandler {
+     );
+   }
+ 
++  handleAirlift(player: PlayerView, targetTile: TileRef) {
++    this.eventBus.emit(
++      new SendAirliftIntentEvent(
++        targetTile,
++        this.uiState.attackRatio * player.troops(),
++      ),
++    );
++  }
++
+   async findBestTransportShipSpawn(
+     player: PlayerView,
+     tile: TileRef,
+diff --git a/src/client/hud/layers/RadialMenuElements.ts b/src/client/hud/layers/RadialMenuElements.ts
+index 37e5838..a2721c2 100644
+--- a/src/client/hud/layers/RadialMenuElements.ts
++++ b/src/client/hud/layers/RadialMenuElements.ts
+@@ -126,6 +126,7 @@ export const COLORS = {
+ export enum Slot {
+   Info = "info",
+   Boat = "boat",
++  Airlift = "airlift",
+   Build = "build",
+   Attack = "attack",
+   Ally = "ally",
+@@ -731,6 +732,23 @@ const boatMenuElement: MenuElement = {
+   },
+ };
+ 
++// 에어본(병사 수송기): 스카이포트가 있어야 사용 가능, 출격당 3M
++const airliftMenuElement: MenuElement = {
++  id: Slot.Airlift,
++  name: "airlift",
++  disabled: (params: MenuElementParams) =>
++    !params.game.isLand(params.tile) ||
++    params.myPlayer.totalUnitLevels(UnitType.Airfield) === 0,
++  icon: boatIcon,
++  color: COLORS.boat,
++
++  action: async (params: MenuElementParams) => {
++    params.playerActionHandler.handleAirlift(params.myPlayer, params.tile);
++
++    params.closeMenu();
++  },
++};
++
+ export const centerButtonElement: CenterButtonElement = {
+   disabled: (params: MenuElementParams): boolean => {
+     const tileOwner = params.game.owner(params.tile);
+@@ -814,6 +832,7 @@ export const rootMenuElement: MenuElement = {
+         ? [deleteUnitElement, allyRequestElement, buildMenuElement]
+         : [
+             isAllied && !isDisconnected ? allyBreakElement : boatMenuElement,
++            isAllied && !isDisconnected ? null : airliftMenuElement,
+             inExtensionWindow ? allyExtendElement : allyRequestElement,
+             showDonateInsteadOfAttack
+               ? donateGoldRadialElement
+diff --git a/src/client/render/gl/passes/UnitPass.ts b/src/client/render/gl/passes/UnitPass.ts
+index 46ee415..84ce200 100644
+--- a/src/client/render/gl/passes/UnitPass.ts
++++ b/src/client/render/gl/passes/UnitPass.ts
+@@ -44,6 +44,7 @@ import {
+   UT_MIRV_WARHEAD,
+   UT_SAM_MISSILE,
+   UT_SHELL,
++  UT_TANK,
+   UT_TRADE_SHIP,
+   UT_TRAIN,
+   UT_TRANSPORT,
+@@ -85,6 +86,7 @@ const UNIT_ORDER = [
+   "TrainEngine",
+   "TrainCarriage",
+   "TrainCarriageLoaded",
++  UT_TANK, // 모드: 탱크 (큰 점)
+ ] as const;
+ 
+ const ATLAS_COLS = UNIT_ORDER.length;
+diff --git a/src/client/render/types/UnitType.ts b/src/client/render/types/UnitType.ts
+index edf1d80..5285d39 100644
+--- a/src/client/render/types/UnitType.ts
++++ b/src/client/render/types/UnitType.ts
+@@ -21,6 +21,7 @@ export const UT_SAM_MISSILE = "SAMMissile" as const;
+ export const UT_SHELL = "Shell" as const;
+ export const UT_MIRV_WARHEAD = "MIRV Warhead" as const;
+ export const UT_TRAIN = "Train" as const;
++export const UT_TANK = "Tank" as const;
+ 
+ // Structures
+ export const UT_CITY = "City" as const;
+@@ -99,4 +100,5 @@ export const ALL_UNIT_TYPES = [
+   UT_SAM_LAUNCHER,
+   UT_MISSILE_SILO,
+   UT_TRAIN,
++  UT_TANK,
+ ] as const;
+diff --git a/src/client/render/types/index.ts b/src/client/render/types/index.ts
+index fbf9e5b..2057227 100644
+--- a/src/client/render/types/index.ts
++++ b/src/client/render/types/index.ts
+@@ -54,6 +54,7 @@ export {
+   UT_SHELL,
+   UT_TRADE_SHIP,
+   UT_TRAIN,
++  UT_TANK,
+   UT_TRANSPORT,
+   UT_WARSHIP,
+ } from "./UnitType";
+diff --git a/src/client/view/PlayerView.ts b/src/client/view/PlayerView.ts
+index df43c93..0b81efa 100644
+--- a/src/client/view/PlayerView.ts
++++ b/src/client/view/PlayerView.ts
+@@ -1,3 +1,4 @@
++import { modIndex } from "@openfront/engine-api/game/ModCatalog";
+ import { TileRef } from "@openfront/engine-api/game/GameMap";
+ import {
+   BuildableUnit,
+@@ -213,7 +214,16 @@ export class PlayerView implements PlayerLike {
+    * Update mutable state in place. Called by GameView.update() each tick the
+    * player appears in the PlayerUpdate stream.
+    */
++  private _modLevels: number[] = [];
++
++  /** 모드 업그레이드/연구 단계 (ModCatalog 항목 번호 순서) */
++  modLevel(key: string): number {
++    const i = modIndex(key);
++    return i < 0 ? 0 : (this._modLevels[i] ?? 0);
++  }
++
+   applyUpdate(pu: PlayerUpdate): void {
++    if (pu.modLevels !== undefined) this._modLevels = [...pu.modLevels];
+     applyStateUpdate(this.state, pu);
+     // applyStateUpdate refreshes outgoingEmojis every tick; re-apply the
+     // "Disable emojis" setting so live emojis stay hidden when it's off (#4430).
+diff --git a/tests/AirPowerMod.test.ts b/tests/AirPowerMod.test.ts
+new file mode 100644
+index 0000000..009b7e6
+--- /dev/null
++++ b/tests/AirPowerMod.test.ts
+@@ -0,0 +1,541 @@
++import {
++  PlayerInfo,
++  PlayerType,
++  UnitType,
++} from "@openfront/engine-api/game/GameTypes";
++import { AirfieldExecution } from "@openfront/engine/execution/AirfieldExecution";
++import {
++  AIRBORNE_COST,
++  AirliftExecution,
++} from "@openfront/engine/execution/AirliftExecution";
++import { AATurretExecution } from "@openfront/engine/execution/AATurretExecution";
++import { BunkerExecution } from "@openfront/engine/execution/BunkerExecution";
++import { NukeExecution } from "@openfront/engine/execution/NukeExecution";
++import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
++import { CivilAirportExecution } from "@openfront/engine/execution/CivilAirportExecution";
++import { NationModBehavior } from "@openfront/engine/execution/nation/NationModBehavior";
++import { ModEquipExecution } from "@openfront/engine/execution/ModEquipExecution";
++import { ModUpgradeExecution } from "@openfront/engine/execution/ModUpgradeExecution";
++import { TankExecution } from "@openfront/engine/execution/TankExecution";
++import { Game, Player, Unit } from "@openfront/engine/game/Game";
++import { setup } from "./util/Setup";
++import { executeTicks } from "./util/utils";
++
++let game: Game;
++let p1: Player;
++let p2: Player;
++
++describe("Bunker / Skyport / Airborne", () => {
++  beforeEach(async () => {
++    game = await setup("half_land_half_ocean", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "p1"),
++      new PlayerInfo("b", PlayerType.Human, null, "p2"),
++    ]);
++    p1 = game.player("p1");
++    p2 = game.player("p2");
++    for (let x = 0; x < 3; x++) for (let y = 0; y < 6; y++) p1.conquer(game.ref(x, y));
++    for (let x = 4; x < 7; x++) for (let y = 0; y < 6; y++) p2.conquer(game.ref(x, y));
++    executeTicks(game, 5);
++  });
++
++  test("costs are 20M bunker / 10M skyport, fixed", () => {
++    expect(game.config().unitInfo(UnitType.Bunker).cost(game, p1)).toBe(20_000_000n);
++    const c1 = game.config().unitInfo(UnitType.Airfield).cost(game, p1);
++    p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
++    expect(c1).toBe(10_000_000n);
++    expect(game.config().unitInfo(UnitType.Airfield).cost(game, p1)).toBe(10_000_000n);
++  });
++
++  test("skyport makes 1 fighter per 60s, max 2", () => {
++    const af = p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
++    const ex = new AirfieldExecution(af);
++    game.addExecution(ex);
++    executeTicks(game, 599);
++    expect(ex.fighterCount()).toBe(0);
++    executeTicks(game, 3);
++    expect(ex.fighterCount()).toBe(1);
++    executeTicks(game, 700);
++    expect(ex.fighterCount()).toBe(2);
++    executeTicks(game, 700);
++    expect(ex.fighterCount()).toBe(2);
++  });
++
++  test("airborne needs a skyport and 3M, then attacks", () => {
++    p1.addGold(50_000_000n);
++    p1.addTroops(100_000);
++    const dst = game.ref(5, 2);
++
++    const before = p1.gold();
++    game.addExecution(new AirliftExecution(p1, dst, 1000));
++    executeTicks(game, 2);
++    expect(p1.gold()).toBe(before); // 스카이포트 없음 -> 실패
++
++    const af = p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
++    game.addExecution(new AirfieldExecution(af));
++    executeTicks(game, 2);
++    const g = p1.gold();
++    const t = p1.troops();
++    game.addExecution(new AirliftExecution(p1, dst, 1000));
++    executeTicks(game, 1);
++    expect(p1.gold()).toBe(g - AIRBORNE_COST);
++    expect(p1.troops()).toBeLessThan(t);
++    executeTicks(game, 30);
++    expect(p1.numTilesOwned()).toBeGreaterThan(18);
++  });
++
++  test("AA turret: 7M fixed, shoots down airborne, 13s cooldown", () => {
++    expect(game.config().unitInfo(UnitType.AATurret).cost(game, p2)).toBe(7_000_000n);
++    p1.addGold(50_000_000n);
++    p1.addTroops(100_000);
++    const af = p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
++    game.addExecution(new AirfieldExecution(af));
++    const turret = p2.buildUnit(UnitType.AATurret, game.ref(5, 3), {});
++    game.addExecution(new AATurretExecution(turret));
++    executeTicks(game, 2);
++
++    const dst = game.ref(5, 2);
++    game.addExecution(new AirliftExecution(p1, dst, 1000));
++    executeTicks(game, 30);
++    expect(game.owner(dst)).toBe(p2); // 격추됨
++    expect(turret.isInCooldown()).toBe(true);
++
++    executeTicks(game, 140); // 13초 지남
++    expect(turret.isInCooldown()).toBe(false);
++    game.addExecution(new AirliftExecution(p1, dst, 1000));
++    executeTicks(game, 1);
++    // 두 번째는 쿨타임이 끝난 터렛이 다시 격추
++    executeTicks(game, 30);
++    expect(game.owner(dst)).toBe(p2);
++    expect(turret.isInCooldown()).toBe(true);
++
++    // 쿨타임 중에 보내면 통과
++    game.addExecution(new AirliftExecution(p1, dst, 1000));
++    executeTicks(game, 30);
++    expect(game.owner(dst)).toBe(p1);
++  });
++});
++
++describe("Bunker nuke protection", () => {
++  test("bunker cuts troop loss from a nuke by ~90%", async () => {
++    const g = await setup("plains", { instantBuild: true, infiniteGold: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("b", PlayerType.Human, null, "b"),
++      new PlayerInfo("c", PlayerType.Human, null, "c"),
++    ]);
++    const a = g.player("a");
++    const b = g.player("b");
++    const c = g.player("c");
++    for (let x = 0; x < 10; x++)
++      for (let y = 0; y < 10; y++) a.conquer(g.ref(x, y));
++    for (let x = 50; x < 60; x++)
++      for (let y = 50; y < 60; y++) b.conquer(g.ref(x, y));
++    for (let x = 30; x < 36; x++)
++      for (let y = 30; y < 36; y++) c.conquer(g.ref(x, y));
++    c.buildUnit(UnitType.MissileSilo, g.ref(32, 32), {});
++    c.buildUnit(UnitType.MissileSilo, g.ref(34, 34), {});
++    executeTicks(g, 3);
++    const bunker = a.buildUnit(UnitType.Bunker, g.ref(2, 2), {});
++    g.addExecution(new BunkerExecution(bunker));
++    executeTicks(g, 3);
++
++    executeTicks(g, 400); // 스폰 보호 시간 지나가기
++    const lossRatio = (victim: Player, x: number, y: number) => {
++      const before = victim.troops();
++      g.addExecution(new NukeExecution(UnitType.AtomBomb, c, g.ref(x, y), null));
++      executeTicks(g, 600);
++      return (before - victim.troops()) / before;
++    };
++    const withBunker = lossRatio(a, 5, 5);
++    const without = lossRatio(b, 55, 55);
++    expect(without).toBeGreaterThan(0.05);
++    expect(withBunker).toBeLessThan(without * 0.3);
++  });
++});
++
++describe("Bunker Buster", () => {
++  test("40M fixed, destroys bunkers in radius only, no land damage", async () => {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("c", PlayerType.Human, null, "c"),
++    ]);
++    const a = g.player("a");
++    const c = g.player("c");
++    for (let x = 0; x < 30; x++)
++      for (let y = 0; y < 10; y++) a.conquer(g.ref(x, y));
++    for (let x = 40; x < 46; x++)
++      for (let y = 40; y < 46; y++) c.conquer(g.ref(x, y));
++    c.buildUnit(UnitType.MissileSilo, g.ref(42, 42), {});
++    c.addGold(100_000_000n);
++    c.setModLevel("bomb_bunker_buster", 1); // 벙커 부스터는 연구 필요
++    executeTicks(g, 3);
++    expect(g.config().unitInfo(UnitType.BunkerBuster).cost(g, c)).toBe(40_000_000n);
++    const near = a.buildUnit(UnitType.Bunker, g.ref(5, 5), {});
++    const far = a.buildUnit(UnitType.Bunker, g.ref(25, 5), {});
++    executeTicks(g, 400);
++    const tilesBefore = a.numTilesOwned();
++    g.addExecution(new NukeExecution(UnitType.BunkerBuster, c, g.ref(5, 5), null));
++    executeTicks(g, 600);
++    expect(near.isActive()).toBe(false);
++    expect(far.isActive()).toBe(true);
++    expect(a.numTilesOwned()).toBe(tilesBefore);
++  });
++});
++
++describe("Tank", () => {
++  async function makeWar(withTank: boolean) {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("b", PlayerType.Human, null, "b"),
++    ]);
++    const a = g.player("a");
++    const b = g.player("b");
++    for (let x = 0; x < 30; x++)
++      for (let y = 0; y < 10; y++) a.conquer(g.ref(x, y));
++    for (let x = 30; x < 60; x++)
++      for (let y = 0; y < 10; y++) b.conquer(g.ref(x, y));
++    a.addGold(100_000_000n);
++    executeTicks(g, 400); // 스폰 보호 시간
++    let tank: Unit | undefined;
++    if (withTank) {
++      g.addExecution(new TankExecution(a, g.ref(2, 5)));
++      executeTicks(g, 2);
++      tank = a.units(UnitType.Tank)[0];
++    }
++    return { g, a, b, tank };
++  }
++
++  test("15M fixed, only on own land", async () => {
++    const { g, a, b } = await makeWar(true);
++    expect(g.config().unitInfo(UnitType.Tank).cost(g, a)).toBe(15_000_000n);
++    expect(a.canBuild(UnitType.Tank, g.ref(5, 5))).not.toBe(false);
++    expect(a.canBuild(UnitType.Tank, g.ref(40, 5))).toBe(false); // 적 땅
++    expect(b.units(UnitType.Tank).length).toBe(0);
++  });
++
++  test("tank advances to the front during a war and helps the attack", async () => {
++    const withT = await makeWar(true);
++    const noT = await makeWar(false);
++    const startX = withT.g.x(withT.tank!.tile());
++
++    for (const w of [withT, noT]) {
++      w.a.addTroops(500_000);
++      w.g.addExecution(new AttackExecution(100_000, w.a, w.b.id()));
++      executeTicks(w.g, 40);
++    }
++    expect(withT.g.x(withT.tank!.tile())).toBeGreaterThan(startX + 5);
++    // 같은 조건에서 탱크가 있으면 더 많이 점령한다
++    expect(withT.a.numTilesOwned()).toBeGreaterThan(noT.a.numTilesOwned());
++  });
++});
++
++describe("Troop upgrades (M window backend)", () => {
++  test("cost rises per level, last level is 37.5M, max 10, needs gold", async () => {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++    ]);
++    const a = g.player("a");
++    a.addGold(1_000_000_000n);
++    const costs: bigint[] = [];
++    for (let i = 0; i < 12; i++) {
++      const before = a.gold();
++      g.addExecution(new ModUpgradeExecution(a, "troop_atk"));
++      executeTicks(g, 1);
++      costs.push(before - a.gold());
++    }
++    expect(a.modLevel("troop_atk")).toBe(10); // 최대 10단계
++    expect(costs[0]).toBe(375_000n);
++    expect(costs[9]).toBe(37_500_000n); // 마지막(10단계) 가격
++    expect(costs[10]).toBe(0n); // 11번째는 구매 안 됨
++    for (let i = 1; i < 10; i++) expect(costs[i]).toBeGreaterThan(costs[i - 1]);
++
++    const poor = await setup("plains", {}, [
++      new PlayerInfo("p", PlayerType.Human, null, "p"),
++    ]);
++    const p = poor.player("p");
++    poor.addExecution(new ModUpgradeExecution(p, "troop_hp"));
++    executeTicks(poor, 1);
++    expect(p.modLevel("troop_hp")).toBe(0);
++  });
++
++  async function war(atk: number, def: number, hpA = 0, hpB = 0) {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("b", PlayerType.Human, null, "b"),
++    ]);
++    const a = g.player("a");
++    const b = g.player("b");
++    for (let x = 0; x < 30; x++)
++      for (let y = 0; y < 10; y++) a.conquer(g.ref(x, y));
++    for (let x = 30; x < 60; x++)
++      for (let y = 0; y < 10; y++) b.conquer(g.ref(x, y));
++    executeTicks(g, 400);
++    a.setModLevel("troop_atk", atk);
++    a.setModLevel("troop_hp", hpA);
++    b.setModLevel("troop_def", def);
++    b.setModLevel("troop_hp", hpB);
++    a.addTroops(500_000);
++    b.addTroops(500_000);
++    const bBefore = b.troops();
++    g.addExecution(new AttackExecution(100_000, a, b.id()));
++    executeTicks(g, 15);
++    const attack = a.outgoingAttacks()[0];
++    return {
++      attackLeft: attack ? attack.troops() : 0,
++      defenderLoss: bBefore - b.troops(),
++    };
++  }
++
++  test("atk raises enemy losses, def raises attacker losses, hp lowers own losses", async () => {
++    const base = await war(0, 0);
++    // 공격력: 적(방어자)이 더 많이 잃는다
++    expect((await war(10, 0)).defenderLoss).toBeGreaterThan(base.defenderLoss);
++    // 방어력: 공격자가 더 많이 잃는다
++    expect((await war(0, 10)).attackLeft).toBeLessThan(base.attackLeft);
++    // 체력: 공격자 체력 업그레이드 -> 공격자 손실 감소 / 방어자 체력 -> 방어자 손실 감소
++    expect((await war(0, 0, 10, 0)).attackLeft).toBeGreaterThan(base.attackLeft);
++    expect((await war(0, 0, 0, 10)).defenderLoss).toBeLessThan(base.defenderLoss);
++  });
++
++  test("levels survive in the update sent to clients", async () => {
++    const g = await setup("plains", {}, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++    ]);
++    const a = g.player("a");
++    a.toUpdate();
++    a.setModLevel("troop_def", 3);
++    const diff = a.toUpdate();
++    expect(diff?.modLevels?.[2]).toBe(3);
++  });
++});
++
++describe("Research effects", () => {
++  async function nukeGame() {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("c", PlayerType.Human, null, "c"),
++    ]);
++    const a = g.player("a");
++    const c = g.player("c");
++    for (let x = 0; x < 20; x++)
++      for (let y = 0; y < 20; y++) a.conquer(g.ref(x, y));
++    for (let x = 40; x < 46; x++)
++      for (let y = 40; y < 46; y++) c.conquer(g.ref(x, y));
++    c.buildUnit(UnitType.MissileSilo, g.ref(42, 42), {});
++    c.addGold(1_000_000_000n);
++    executeTicks(g, 400);
++    return { g, a, c };
++  }
++
++  test("weapons: strongest researched weapon sets attack multiplier", async () => {
++    const { bestWeaponMultiplier } = await import(
++      "@openfront/engine-api/game/ModCatalog"
++    );
++    expect(bestWeaponMultiplier(() => 0)).toBe(1);
++    const has = new Set(["weapon_assault_rifle", "weapon_howitzer"]);
++    expect(bestWeaponMultiplier((k) => (has.has(k) ? 1 : 0))).toBe(1.95);
++  });
++
++  test("weapon research changes battle losses", async () => {
++    async function loss(weapon: string | null) {
++      const g = await setup("plains", { instantBuild: true }, [
++        new PlayerInfo("a", PlayerType.Human, null, "a"),
++        new PlayerInfo("b", PlayerType.Human, null, "b"),
++      ]);
++      const a = g.player("a");
++      const b = g.player("b");
++      for (let x = 0; x < 30; x++)
++        for (let y = 0; y < 10; y++) a.conquer(g.ref(x, y));
++      for (let x = 30; x < 60; x++)
++        for (let y = 0; y < 10; y++) b.conquer(g.ref(x, y));
++      executeTicks(g, 400);
++      if (weapon) a.setModLevel(weapon, 1);
++      a.addTroops(500_000);
++      b.addTroops(500_000);
++      const before = b.troops();
++      g.addExecution(new AttackExecution(100_000, a, b.id()));
++      executeTicks(g, 15);
++      return before - b.troops();
++    }
++    const none = await loss(null);
++    const rifle = await loss("weapon_assault_rifle");
++    const railgun = await loss("weapon_railgun");
++    expect(rifle).toBeGreaterThan(none);
++    expect(railgun).toBeGreaterThan(rifle);
++  });
++
++  test("airborne capacity grows with research", async () => {
++    const { airCapacity } = await import("@openfront/engine-api/game/ModCatalog");
++    expect(airCapacity(0)).toBeLessThan(airCapacity(3));
++    async function sent(level: number) {
++      const g = await setup("half_land_half_ocean", { instantBuild: true }, [
++        new PlayerInfo("a", PlayerType.Human, null, "a"),
++        new PlayerInfo("b", PlayerType.Human, null, "b"),
++      ]);
++      const a = g.player("a");
++      const b = g.player("b");
++      for (let x = 0; x < 3; x++)
++        for (let y = 0; y < 6; y++) a.conquer(g.ref(x, y));
++      for (let x = 4; x < 7; x++)
++        for (let y = 0; y < 6; y++) b.conquer(g.ref(x, y));
++      executeTicks(g, 5);
++      a.addGold(50_000_000n);
++      a.addTroops(500_000);
++      a.setModLevel("air_cap", level);
++      a.buildUnit(UnitType.Airfield, g.ref(1, 1), {});
++      executeTicks(g, 2);
++      const before = a.troops();
++      g.addExecution(new AirliftExecution(a, g.ref(5, 2), 400_000));
++      executeTicks(g, 1);
++      return before - a.troops();
++    }
++    const base = await sent(0);
++    const upgraded = await sent(3);
++    expect(base).toBeLessThanOrEqual(15_000 + 1);
++    expect(upgraded).toBeGreaterThan(base);
++  });
++
++  test("bombs: must research to equip; neutron spares buildings; tsar costs more and hits wider", async () => {
++    const { g, a, c } = await nukeGame();
++    const cost = (p: Player) => g.config().unitInfo(UnitType.HydrogenBomb).cost(g, p);
++    const baseCost = cost(c);
++
++    // 연구 안 한 폭탄은 장착 불가
++    g.addExecution(new ModEquipExecution(c, "hbomb", 1 + 5)); // tsar
++    executeTicks(g, 1);
++    expect(c.modLevel("slot_hbomb")).toBe(0);
++    // 다른 슬롯 변형을 끼우려 하면 무시
++    c.setModLevel("bomb_neutron", 1);
++    g.addExecution(new ModEquipExecution(c, "hbomb", 1 + 3)); // neutron은 abomb 슬롯
++    executeTicks(g, 1);
++    expect(c.modLevel("slot_hbomb")).toBe(0);
++
++    // 차르봄바 연구 + 장착 -> 가격 x3
++    c.setModLevel("bomb_tsar", 1);
++    g.addExecution(new ModEquipExecution(c, "hbomb", 1 + 5));
++    executeTicks(g, 1);
++    expect(c.modLevel("slot_hbomb")).toBe(6);
++    expect(cost(c)).toBe(baseCost * 3n);
++
++    // 중성자탄: 병력은 죽이지만 건물은 남긴다
++    c.setModLevel("slot_hbomb", 0);
++    g.addExecution(new ModEquipExecution(c, "abomb", 1 + 3)); // neutron
++    executeTicks(g, 1);
++    expect(c.modLevel("slot_abomb")).toBe(4);
++    const city = a.buildUnit(UnitType.City, g.ref(5, 5), {});
++    c.buildUnit(UnitType.MissileSilo, g.ref(43, 43), {});
++    executeTicks(g, 2);
++    g.addExecution(new NukeExecution(UnitType.AtomBomb, c, g.ref(5, 5), null));
++    executeTicks(g, 600);
++    expect(city.isActive()).toBe(true); // 중성자탄은 건물을 부수지 않음
++
++    // 기본 폭탄으로 되돌리면 건물이 부서진다
++    g.addExecution(new ModEquipExecution(c, "abomb", 0));
++    executeTicks(g, 1);
++    c.buildUnit(UnitType.MissileSilo, g.ref(44, 44), {});
++    executeTicks(g, 2);
++    g.addExecution(new NukeExecution(UnitType.AtomBomb, c, g.ref(5, 5), null));
++    executeTicks(g, 600);
++    expect(city.isActive()).toBe(false);
++  });
++
++  test("bunker buster requires research", async () => {
++    const { g, c } = await nukeGame();
++    expect(c.canBuild(UnitType.BunkerBuster, g.ref(5, 5))).toBe(false);
++    c.setModLevel("bomb_bunker_buster", 1);
++    expect(c.canBuild(UnitType.BunkerBuster, g.ref(5, 5))).not.toBe(false);
++  });
++});
++
++describe("Civil airport & upgrades", () => {
++  async function two() {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("b", PlayerType.Human, null, "b"),
++    ]);
++    const a = g.player("a");
++    const b = g.player("b");
++    for (let x = 0; x < 20; x++)
++      for (let y = 0; y < 20; y++) a.conquer(g.ref(x, y));
++    for (let x = 40; x < 60; x++)
++      for (let y = 0; y < 20; y++) b.conquer(g.ref(x, y));
++    executeTicks(g, 5);
++    return { g, a, b };
++  }
++
++  test("5M fixed; earns every 10s; partners and level raise income", async () => {
++    const { g, a, b } = await two();
++    expect(g.config().unitInfo(UnitType.CivilAirport).cost(g, a)).toBe(5_000_000n);
++    a.addGold(100_000_000n);
++    const port = a.buildUnit(UnitType.CivilAirport, g.ref(5, 5), {});
++    const ex = new CivilAirportExecution(port);
++    g.addExecution(ex);
++    executeTicks(g, 2);
++    expect(ex.income()).toBe(100_000n);
++    const before = a.gold();
++    executeTicks(g, 100);
++    expect(a.gold() - before).toBe(100_000n);
++
++    // 상대 나라 공항이 생기면 수입이 늘어난다
++    const bPort = b.buildUnit(UnitType.CivilAirport, g.ref(45, 5), {});
++    g.addExecution(new CivilAirportExecution(bPort));
++    executeTicks(g, 2);
++    expect(ex.income()).toBe(140_000n);
++
++    // 업그레이드(레벨 2)하면 두 배
++    expect(a.canUpgradeUnit(port)).toBe(true);
++    a.upgradeUnit(port);
++    expect(port.level()).toBe(2);
++    expect(ex.income()).toBe(280_000n);
++  });
++
++  test("skyport upgrade holds more fighters; AA turret upgrade reaches farther", async () => {
++    const { g, a } = await two();
++    const af = a.buildUnit(UnitType.Airfield, g.ref(5, 5), {});
++    const ex = new AirfieldExecution(af);
++    g.addExecution(ex);
++    a.addGold(1_000_000_000n);
++    a.upgradeUnit(af);
++    expect(af.level()).toBe(2);
++    executeTicks(g, 2000);
++    expect(ex.fighterCount()).toBe(4); // 레벨 2 = 4대 보관
++
++    const { aaTurretRange, aaTurretCooldown } = await import(
++      "@openfront/engine/execution/AATurretExecution"
++    );
++    expect(aaTurretRange(2)).toBeGreaterThan(aaTurretRange(1));
++    expect(aaTurretCooldown(2)).toBeLessThan(aaTurretCooldown(1));
++    const tur = a.buildUnit(UnitType.AATurret, g.ref(8, 8), {});
++    expect(a.canUpgradeUnit(tur)).toBe(true);
++  });
++});
++
++describe("Nation AI uses mod features", () => {
++  test("AI buys upgrades, researches weapons/bombs, equips slots, builds new structures", async () => {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("n", PlayerType.Nation, null, "n"),
++    ]);
++    const n = g.player("n");
++    for (let x = 0; x < 40; x++)
++      for (let y = 0; y < 40; y++) n.conquer(g.ref(x, y));
++    n.buildUnit(UnitType.City, g.ref(20, 20), {});
++    executeTicks(g, 5);
++    const ai = new NationModBehavior(g, n);
++    for (let i = 0; i < 400; i++) {
++      n.addGold(5_000_000n);
++      ai.think();
++      executeTicks(g, 3);
++    }
++    const levels = ["troop_atk", "troop_hp", "troop_def"].map((k) => n.modLevel(k));
++    expect(levels.every((l) => l > 0)).toBe(true);
++    expect(n.modLevel("weapon_railgun")).toBe(1);
++    expect(n.modLevel("tank_tech")).toBeGreaterThan(0);
++    // 폭탄 연구와 슬롯 장착
++    expect(n.modLevel("slot_abomb")).toBeGreaterThan(0);
++    expect(n.modLevel("slot_hbomb")).toBeGreaterThan(0);
++    // 새 건물
++    expect(n.units(UnitType.CivilAirport).length).toBeGreaterThan(0);
++    expect(n.units(UnitType.Bunker).length).toBe(1);
++    expect(n.units(UnitType.Airfield).length).toBe(1);
++    expect(n.units(UnitType.AATurret).length).toBe(1);
++  });
++});
+diff --git a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
+index f817747..d809b78 100644
+--- a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
++++ b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap@@ -2,7 +2,7 @@
+ 
+ exports[`nation gold per minute > world map, impossible nations, 20 minutes 1`] = `
+ {
+-  "aliveNations": 41,
++  "aliveNations": 38,
+   "perMinute": [
+     {
+       "cities": 0,
+@@ -173,83 +173,83 @@ exports[`nation gold per minute > world map, impossible nations, 20 minutes 1`]
+       "trainsRunning": 343,
+     },
+     {
+-      "cities": 172,
+-      "factories": 67,
++      "cities": 177,
++      "factories": 72,
+       "minute": 15,
+-      "ports": 110,
+-      "shipsArrived": 265,
+-      "tradeGold": 67520000,
+-      "tradeShipsAtSea": 482,
+-      "trainGold": 23670000,
+-      "trainStops": 629,
+-      "trainsRunning": 217,
++      "ports": 113,
++      "shipsArrived": 272,
++      "tradeGold": 68910000,
++      "tradeShipsAtSea": 496,
++      "trainGold": 25270000,
++      "trainStops": 660,
++      "trainsRunning": 308,
+     },
+     {
+-      "cities": 167,
+-      "factories": 68,
++      "cities": 173,
++      "factories": 72,
+       "minute": 16,
+-      "ports": 115,
+-      "shipsArrived": 218,
+-      "tradeGold": 54240000,
+-      "tradeShipsAtSea": 465,
+-      "trainGold": 19940000,
+-      "trainStops": 508,
+-      "trainsRunning": 161,
++      "ports": 118,
++      "shipsArrived": 249,
++      "tradeGold": 63090000,
++      "tradeShipsAtSea": 552,
++      "trainGold": 30830000,
++      "trainStops": 735,
++      "trainsRunning": 336,
+     },
+     {
+-      "cities": 172,
+-      "factories": 74,
++      "cities": 174,
++      "factories": 71,
+       "minute": 17,
+-      "ports": 121,
+-      "shipsArrived": 254,
+-      "tradeGold": 62040000,
+-      "tradeShipsAtSea": 536,
+-      "trainGold": 20330000,
+-      "trainStops": 583,
+-      "trainsRunning": 287,
++      "ports": 119,
++      "shipsArrived": 292,
++      "tradeGold": 74470000,
++      "tradeShipsAtSea": 507,
++      "trainGold": 31000000,
++      "trainStops": 761,
++      "trainsRunning": 371,
+     },
+     {
+-      "cities": 174,
+-      "factories": 79,
++      "cities": 180,
++      "factories": 78,
+       "minute": 18,
+       "ports": 121,
+-      "shipsArrived": 265,
+-      "tradeGold": 65090000,
+-      "tradeShipsAtSea": 587,
+-      "trainGold": 19830000,
+-      "trainStops": 575,
+-      "trainsRunning": 343,
++      "shipsArrived": 233,
++      "tradeGold": 59630000,
++      "tradeShipsAtSea": 581,
++      "trainGold": 25050000,
++      "trainStops": 674,
++      "trainsRunning": 385,
+     },
+     {
+-      "cities": 175,
+-      "factories": 77,
++      "cities": 176,
++      "factories": 79,
+       "minute": 19,
+       "ports": 121,
+-      "shipsArrived": 279,
+-      "tradeGold": 68990000,
+-      "tradeShipsAtSea": 605,
+-      "trainGold": 23670000,
+-      "trainStops": 638,
+-      "trainsRunning": 336,
++      "shipsArrived": 292,
++      "tradeGold": 71660000,
++      "tradeShipsAtSea": 572,
++      "trainGold": 29240000,
++      "trainStops": 802,
++      "trainsRunning": 427,
+     },
+     {
+-      "cities": 186,
+-      "factories": 83,
++      "cities": 162,
++      "factories": 74,
+       "minute": 20,
+-      "ports": 128,
+-      "shipsArrived": 332,
+-      "tradeGold": 81550000,
+-      "tradeShipsAtSea": 618,
+-      "trainGold": 33210000,
+-      "trainStops": 827,
+-      "trainsRunning": 497,
++      "ports": 116,
++      "shipsArrived": 297,
++      "tradeGold": 68940000,
++      "tradeShipsAtSea": 551,
++      "trainGold": 22890000,
++      "trainStops": 665,
++      "trainsRunning": 392,
+     },
+   ],
+   "totals": {
+-    "shipsArrived": 2689,
+-    "tradeGold": 669000000,
+-    "trainGold": 217900000,
+-    "trainStops": 5693,
++    "shipsArrived": 2711,
++    "tradeGold": 676200000,
++    "trainGold": 241500000,
++    "trainStops": 6230,
+   },
+ }
+ `;
+diff --git a/tests/client/PlayerStatsTable.test.ts b/tests/client/PlayerStatsTable.test.ts
+index 223e5e7..409903d 100644
+--- a/tests/client/PlayerStatsTable.test.ts
++++ b/tests/client/PlayerStatsTable.test.ts
+@@ -168,8 +168,9 @@ describe("PlayerStatsTable", () => {
+         text(candidate.querySelector("th")) === "player_stats_table.building",
+     );
+     expect(buildings, "buildings table should exist").toBeDefined();
+-    // The six structures, with the warship row moved to its own section.
+-    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(6);
++    // 기본 건물 6개 + 모드로 추가한 4개(벙커, 스카이포트, 대공 터렛, 탱크).
++    // 전함 행은 별도 구역으로 빠진다.
++    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(10);
+     expect(buildings?.textContent).not.toContain("unit_type.warship");
+ 
+     expect(columnsOf(table, "player_stats_table.warship_stats")).toEqual({
+diff --git a/tests/client/UnitDisplay.test.ts b/tests/client/UnitDisplay.test.ts
+index 8d6dbd8..1168016 100644
+--- a/tests/client/UnitDisplay.test.ts
++++ b/tests/client/UnitDisplay.test.ts
+@@ -138,7 +138,17 @@ describe("mobile UnitDisplay layout", () => {
+       await display.updateComplete;
+ 
+       const grid = display.querySelector<HTMLElement>(".unit-display-grid");
+-      expect(grid?.children).toHaveLength(BuildMenus.types.length - 1);
++      // 모드로 추가한 건물/폭탄은 단축바가 아니라 건설 메뉴(BuildMenu)로만 연다.
++      const modOnly = [
++        UnitType.Bunker,
++        UnitType.Airfield,
++        UnitType.AATurret,
++        UnitType.BunkerBuster,
++      ];
++      const hotbarTypes = BuildMenus.types.filter(
++        (t) => !(modOnly as UnitType[]).includes(t),
++      );
++      expect(grid?.children).toHaveLength(hotbarTypes.length - 1);
+     } finally {
+       display.remove();
+     }
+diff --git a/tests/core/snapshot/FullGameSnapshot.test.ts b/tests/core/snapshot/FullGameSnapshot.test.ts
+index c561d5e..d5635c6 100644
+--- a/tests/core/snapshot/FullGameSnapshot.test.ts
++++ b/tests/core/snapshot/FullGameSnapshot.test.ts
+@@ -196,7 +196,10 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
+       if (Object.keys(overrides).length > 0) return; // checked once, on FFA
+       // Runs during the spawn phase and finishes inside init, so it is never
+       // alive at a tick boundary. BasicExecutions.test.ts covers it directly.
+-      const neverStored = new Set(["Pause"]);
++      // 모드 추가 실행: 국가 AI가 아직 쓰지 않아 기준 게임에 나오지 않음
++      // (tests/AirPowerMod.test.ts에서 직접 검증). AI 연결 후 이 목록에서 빼야 함.
++      const modOnly = ["Bunker", "Airfield", "AATurret", "Airlift", "Tank", "ModUpgrade", "ModEquip", "CivilAirport"];
++      const neverStored = new Set(["Pause", ...modOnly]);
+       const missing = EXECUTION_SNAPSHOT_TYPES.map((t) => t.name).filter(
+         (name) => !reference.execTypes.has(name) && !neverStored.has(name),
+       );
