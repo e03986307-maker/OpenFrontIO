@@ -22,7 +22,8 @@ import {
   SendModEquipIntentEvent,
   SendModUpgradeIntentEvent,
 } from "../../Transport";
-import { translateText } from "../../Utils";+import { GameView } from "../../view";
+import { translateText } from "../../Utils";
+import { GameView } from "../../view";
 
 /** 골드를 M/K 단위로 줄여 쓴다 (예: 37500000 -> 37.5M) */
 export function formatM(gold: bigint): string {
