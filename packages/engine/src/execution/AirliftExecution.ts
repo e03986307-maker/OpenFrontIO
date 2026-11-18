@@ -148,7 +148,8 @@ export class AirliftExecution implements Execution {
     return AirliftExecutionSnapshot.write({
       active: this.active,
       initialized: this.mg !== undefined,
-      attacker: w.player(this.attacker),+      dst: this.dst,
+      attacker: w.player(this.attacker),
+      dst: this.dst,
       troops: this.troops,
       arrivalTick: this.arrivalTick,
     });
