@@ -85,7 +85,8 @@ export class NationModBehavior {
 
   /** 연구한 폭탄 중 가장 선호하는 것을 슬롯에 끼운다. */
   private manageBombSlots(): void {
-    for (const slot of Object.keys(BOMB_PREFERENCE) as BombSlot[]) {+      const current = this.player.modLevel(slotKey(slot));
+    for (const slot of Object.keys(BOMB_PREFERENCE) as BombSlot[]) {
+      const current = this.player.modLevel(slotKey(slot));
       for (const key of BOMB_PREFERENCE[slot]) {
         if (this.player.modLevel(key) === 0) continue;
         // 차르봄바는 비싸서 부자일 때만
