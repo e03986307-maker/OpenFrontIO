@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: openfront-mod
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: mod-patch-work
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: GAME_ENV
+        value: dev
+      - key: DOMAIN
+        value: localhost
+      - key: TURNSTILE_SITE_KEY
+        value: 1x00000000000000000000AA
+      - key: API_KEY
+        value: WARNING_DEV_API_KEY_DO_NOT_USE_IN_PRODUCTION
+      - key: GIT_COMMIT
+        value: unknown
+      - key: NUM_WORKERS
+        value: "2"
