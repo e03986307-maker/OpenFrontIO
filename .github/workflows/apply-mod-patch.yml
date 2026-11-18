@@ -1,0 +1,52 @@
+name: Apply and validate OpenFront mod patch
+
+on:
+  push:
+    branches:
+      - mod-patch-work
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: ${{ hashFiles('mod.patch') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out mod branch
+        uses: actions/checkout@v4
+        with:
+          ref: mod-patch-work
+          fetch-depth: 0
+
+      - name: Apply corrected patch
+        run: |
+          set -euo pipefail
+          git apply --recount --check mod.patch
+          git apply --recount mod.patch
+          rm mod.patch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add Air Power mod gameplay"
+          git push origin HEAD:mod-patch-work
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+
+      - name: Install npm
+        run: npm install --global npm@12.1.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run mod and snapshot tests
+        run: npx vitest run tests/AirPowerMod.test.ts tests/core/snapshot/FullGameSnapshot.test.ts
+
+      - name: Lint
+        run: npm run lint
