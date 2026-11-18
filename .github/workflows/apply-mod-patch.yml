@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   apply-and-test:
-    if: ${{ hashFiles('mod.patch') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out mod branch
