@@ -3984,7 +3984,8 @@ index 0000000..009b7e6
 diff --git a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
 index f817747..d809b78 100644
 --- a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
-+++ b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap@@ -2,7 +2,7 @@
++++ b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
+@@ -2,7 +2,7 @@
  
  exports[`nation gold per minute > world map, impossible nations, 20 minutes 1`] = `
  {
