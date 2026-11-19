@@ -269,7 +269,8 @@ export class ModPanel extends LitElement implements Controller {
             equippedN === 0 ? translateText("mod_panel.equipped") : "",
             html``,
             equippedN === 0
-              ? html``+              : html`<button
+              ? html``
+              : html`<button
                   class="py-2 px-3 min-h-[44px] rounded-sm text-white text-sm border border-gray-200 hover:bg-gray-500"
                   @click=${() => this.equip(slot, 0)}
                 >
