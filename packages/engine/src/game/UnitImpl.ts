@@ -405,16 +405,6 @@ export class UnitImpl implements Unit {
         case UnitType.AATurret:
         case UnitType.Tank:
         case UnitType.CivilAirport:
-      case UnitType.CivilAirport:
-      case UnitType.Tank:
-      case UnitType.CivilAirport:
-      case UnitType.AATurret:
-      case UnitType.Tank:
-      case UnitType.CivilAirport:
-      case UnitType.Airfield:
-      case UnitType.AATurret:
-      case UnitType.Tank:
-      case UnitType.CivilAirport:
           this.mg.stats().unitDestroy(destroyer, this._type);
           this.mg.stats().unitLose(this.owner(), this._type);
           break;
