@@ -5460,3 +5460,8 @@ index c561d5e..490a41c 100644
        const missing = EXECUTION_SNAPSHOT_TYPES.map((t) => t.name).filter(
          (name) => !reference.execTypes.has(name) && !neverStored.has(name),
        );
+       expect(missing).toEqual([]);
+     },
+     TEST_TIMEOUT,
+   );
+ });
