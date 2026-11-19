@@ -80,6 +80,11 @@ export interface UnitParamsMap {
     trajectory: TileRef[];
   };
 
+  [UnitType.BunkerBuster]: {
+    targetTile?: number;
+    trajectory: TileRef[];
+  };
+
   [UnitType.HydrogenBomb]: {
     targetTile?: number;
     trajectory: TileRef[];
@@ -111,6 +116,21 @@ export interface UnitParamsMap {
   [UnitType.MissileSilo]: Record<string, never>;
 
   [UnitType.DefensePost]: Record<string, never>;
+
+  [UnitType.Bunker]: Record<string, never>;
+
+  [UnitType.Airfield]: Record<string, never>;
+
+  [UnitType.AATurret]: Record<string, never>;
+
+  [UnitType.Tank]: Record<string, never>;
+
+  [UnitType.CivilAirport]: Record<string, never>;
+
+  /** 생화학 오염 지대. troops = 오염 반경(타일) */
+  [UnitType.BioZone]: { troops: number };
+
+  [UnitType.Airborne]: { troops: number };
 
   [UnitType.SAMLauncher]: Record<string, never>;
 
@@ -494,6 +514,11 @@ export interface Player extends PlayerLike {
     sourceTile: TileRef | null,
     border: Set<number>,
   ): Attack;
+  /** 모드 업그레이드/연구 단계 (ModCatalog 항목 번호 순서) */
+  modLevel(key: string): number;
+  setModLevel(key: string, level: number): void;
+  modLevels(): readonly number[];
+
   outgoingAttacks(): Attack[];
   incomingAttacks(): Attack[];
   orderRetreat(attackID: string): void;

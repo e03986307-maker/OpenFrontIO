@@ -20,7 +20,7 @@
  */
 
 import type { UnitState } from "../types";
-import { SMOOTHED_NUKE_TYPES } from "../types";
+import { SMOOTHED_NUKE_TYPES, UT_AIRBORNE } from "../types";
 
 // Bit 12 of the trail texel flags a nuke trail (vs a boat trail); bits 0-11 are
 // the owner smallID. Must match the mask/shift in trail.frag.glsl (owner & 0xFFF,
@@ -112,6 +112,11 @@ export class TrailManager {
         // First sighting — just stamp the current head
         this.claim(head, trail);
         trail.lastPosStamped = head;
+        // 에어본: 출발부터 목표까지 전체 항로를 처음부터 그려 어디로 가는지 보여준다.
+        // (비행기가 사라지면 항로도 함께 지워진다)
+        if (unit.unitType === UT_AIRBORNE && unit.targetTile !== null) {
+          this.bresenham(head, unit.targetTile, trail);
+        }
       } else if (trail.lastPosStamped !== head) {
         this.bresenham(trail.lastPosStamped, head, trail);
         trail.lastPosStamped = head;

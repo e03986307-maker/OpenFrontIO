@@ -1,3 +1,8 @@
+import {
+  BUNKER_BUSTER_RESEARCH,
+  MOD_ITEMS,
+  modIndex,
+} from "@openfront/engine-api/game/ModCatalog";
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   AllianceInfo,
@@ -416,6 +421,7 @@ export class PlayerImpl implements Player {
       betrayals: this._betrayalCount,
       lastDeleteUnitTick: this.lastDeleteUnitTick,
       isLobbyCreator: this.isLobbyCreator(),
+      modLevels: this._modLevels,
     };
   }
 
@@ -507,6 +513,24 @@ export class PlayerImpl implements Player {
       }
     }
     return scratch.slice(0, n);
+  }
+
+  private _modLevels: number[] = MOD_ITEMS.map(() => 0);
+
+  modLevel(key: string): number {
+    const i = modIndex(key);
+    return i < 0 ? 0 : (this._modLevels[i] ?? 0);
+  }
+
+  setModLevel(key: string, level: number): void {
+    const i = modIndex(key);
+    if (i < 0) return;
+    // 배열을 새로 만들어야 업데이트 비교(diff)가 변경을 알아챈다.
+    this._modLevels = this._modLevels.map((v, j) => (j === i ? level : v));
+  }
+
+  modLevels(): readonly number[] {
+    return this._modLevels;
   }
 
   private numUnitsConstructed: Partial<Record<UnitType, number>> = {};
@@ -1463,6 +1487,12 @@ export class PlayerImpl implements Player {
     if (this.mg.config().isUnitDisabled(unitType)) {
       return false;
     }
+    if (
+      unitType === UnitType.BunkerBuster &&
+      this.modLevel(BUNKER_BUSTER_RESEARCH.key) === 0
+    ) {
+      return false; // 벙커 부스터는 폭탄 연구가 필요
+    }
     const cost = knownCost ?? this.mg.unitInfo(unitType).cost(this.mg, this);
     if (this._gold < cost) {
       return false;
@@ -1608,6 +1638,7 @@ export class PlayerImpl implements Player {
         }
         return this.nukeSpawn(targetTile, unitType);
       case UnitType.AtomBomb:
+      case UnitType.BunkerBuster:
       case UnitType.HydrogenBomb:
         return this.nukeSpawn(targetTile, unitType);
       case UnitType.MIRVWarhead:
@@ -1625,11 +1656,24 @@ export class PlayerImpl implements Player {
         return this.tradeShipSpawn(targetTile);
       case UnitType.Train:
         return this.landBasedUnitSpawn(targetTile);
+      case UnitType.Airborne:
+        return false; // 메뉴에서 만들지 않음 (에어본 출격 때만 생김)
+      case UnitType.BioZone:
+        return false; // 플레이어가 직접 만들 수 없음 (생화학탄이 터질 때만 생김)
+      case UnitType.Tank:
+        // 탱크는 자기 땅(육지)에만 배치
+        return this.mg.owner(targetTile) === this
+          ? this.landBasedUnitSpawn(targetTile)
+          : false;
       case UnitType.MissileSilo:
       case UnitType.DefensePost:
       case UnitType.SAMLauncher:
       case UnitType.City:
       case UnitType.Factory:
+      case UnitType.Bunker:
+      case UnitType.Airfield:
+      case UnitType.AATurret:
+      case UnitType.CivilAirport:
         return this.landBasedStructureSpawn(targetTile, validTiles);
       default:
         assertNever(unitType);
@@ -2034,6 +2078,7 @@ export class PlayerImpl implements Player {
       numUnitsConstructed: Object.entries(this.numUnitsConstructed).map(
         ([type, n]) => [type as UnitType, n],
       ),
+      modLevels: [...this._modLevels],
     };
   }
 
@@ -2107,6 +2152,7 @@ export class PlayerImpl implements Player {
         }
       : (box as null);
     this.numUnitsConstructed = Object.fromEntries(s.numUnitsConstructed);
+    this._modLevels = MOD_ITEMS.map((_, i) => s.modLevels?.[i] ?? 0);
     this.nearbyMemo = null;
   }
 }
@@ -2177,6 +2223,8 @@ export const PlayerSnapshot = snapshotType({
       .nullable()
       .optional(),
     numUnitsConstructed: z.array(z.tuple([UnitTypeSchema, zInt()])),
+    // 모드: 업그레이드/연구 단계 (예전 스냅샷에는 없으므로 optional)
+    modLevels: z.array(zInt()).optional(),
   }),
 });
 export type PlayerState = z.infer<typeof PlayerSnapshot.schema>;

@@ -15,6 +15,15 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
 import { EmbargoAllExecutionSnapshot } from "../execution/EmbargoAllExecution";
 import { EmbargoExecutionSnapshot } from "../execution/EmbargoExecution";
 import { EmojiExecutionSnapshot } from "../execution/EmojiExecution";
+import { AirliftExecutionSnapshot } from "../execution/AirliftExecution";
+import { TankExecutionSnapshot } from "../execution/TankExecution";
+import { ModEquipExecutionSnapshot } from "../execution/ModEquipExecution";
+import { ModUpgradeExecutionSnapshot } from "../execution/ModUpgradeExecution";
+import { CivilAirportExecutionSnapshot } from "../execution/CivilAirportExecution";
+import { BioZoneExecutionSnapshot } from "../execution/BioZoneExecution";
+import { AATurretExecutionSnapshot } from "../execution/AATurretExecution";
+import { AirfieldExecutionSnapshot } from "../execution/AirfieldExecution";
+import { BunkerExecutionSnapshot } from "../execution/BunkerExecution";
 import { FactoryExecutionSnapshot } from "../execution/FactoryExecution";
 import { MarkDisconnectedExecutionSnapshot } from "../execution/MarkDisconnectedExecution";
 import { MirvExecutionSnapshot } from "../execution/MIRVExecution";
@@ -70,6 +79,15 @@ export const EXECUTION_SNAPSHOT_TYPES = [
   EmbargoExecutionSnapshot,
   EmojiExecutionSnapshot,
   FactoryExecutionSnapshot,
+  BunkerExecutionSnapshot,
+  AirfieldExecutionSnapshot,
+  AATurretExecutionSnapshot,
+  BioZoneExecutionSnapshot,
+  CivilAirportExecutionSnapshot,
+  ModUpgradeExecutionSnapshot,
+  ModEquipExecutionSnapshot,
+  TankExecutionSnapshot,
+  AirliftExecutionSnapshot,
   MarkDisconnectedExecutionSnapshot,
   MirvExecutionSnapshot,
   MissileSiloExecutionSnapshot,

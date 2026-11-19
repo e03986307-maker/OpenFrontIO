@@ -7,6 +7,7 @@
  * is valid, and pushes preview data straight to the WebGL view.
  */
 
+import { scaleNukeMagnitude } from "@openfront/engine-api/game/ModCatalog";
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   BuildableUnit,
@@ -260,6 +261,15 @@ function isTrajectoryEqual(
 
 export class BuildPreviewController implements Controller {
   /** Current ghost (null when no build type is active). */
+  /** 내가 장착한 폭탄 변형과 핵 위력 연구를 반영한 폭발 반경 */
+  private nukeMag(unitType: UnitType) {
+    const base = this.game.config().nukeMagnitudes(unitType);
+    const me = this.game.myPlayer();
+    return me
+      ? scaleNukeMagnitude(base, unitType, (k) => me.modLevel(k))
+      : base;
+  }
+
   private ghostUnit: { buildableUnit: BuildableUnit } | null = null;
   private readonly traitorMarkAllySmallIds: Set<number> = new Set();
   private readonly noMarkAllySmallIds: Set<number> = new Set();
@@ -548,7 +558,7 @@ export class BuildPreviewController implements Controller {
         this.traitorMarkAllySmallIds.add(ally.smallID());
       }
     }
-    const magnitude = this.game.config().nukeMagnitudes(nukeType);
+    const magnitude = this.nukeMag(nukeType);
     const threshold = this.game.config().nukeAllianceBreakThreshold();
     if (
       wouldNukeBreakAlliance({
@@ -847,7 +857,7 @@ export class BuildPreviewController implements Controller {
     return listNukeBreakAlliance({
       game: this.game,
       targetTile,
-      magnitude: this.game.config().nukeMagnitudes(unitType),
+      magnitude: this.nukeMag(unitType),
       threshold: this.game.config().nukeAllianceBreakThreshold(),
     });
   }
@@ -1256,7 +1266,7 @@ export class BuildPreviewController implements Controller {
         : listNukeBreakAlliance({
             game: this.game,
             targetTile: tile,
-            magnitude: this.game.config().nukeMagnitudes(unitType),
+            magnitude: this.nukeMag(unitType),
             threshold: this.game.config().nukeAllianceBreakThreshold(),
           });
 

@@ -16,7 +16,11 @@
 
 import type { GhostPreviewData, RendererConfig, UnitState } from "../../types";
 import {
+  UT_AA_TURRET,
+  UT_AIRFIELD,
+  UT_BUNKER,
   UT_CITY,
+  UT_CIVIL_AIRPORT,
   UT_DEFENSE_POST,
   UT_FACTORY,
   UT_MISSILE_SILO,
@@ -53,6 +57,11 @@ const STRUCTURE_ORDER = [
   UT_DEFENSE_POST,
   UT_SAM_LAUNCHER,
   UT_MISSILE_SILO,
+  // 모드 구조물 (icon-atlas.png 6~9번째 칸)
+  UT_BUNKER,
+  UT_AIRFIELD,
+  UT_AA_TURRET,
+  UT_CIVIL_AIRPORT,
 ] as const;
 
 const ATLAS_COLS = STRUCTURE_ORDER.length;
@@ -115,7 +124,7 @@ export class StructurePass {
 
   private instanceCount = 0;
 
-  /** unitType string → atlas column index (0–5) */
+  /** unitType string → atlas column index (0–9) */
   private typeToAtlasCol = new Map<string, number>();
   private mapW: number;
 

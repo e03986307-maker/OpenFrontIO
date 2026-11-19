@@ -36,6 +36,7 @@ import { NationAllianceBehavior } from "./nation/NationAllianceBehavior";
 import { NationAttackBehavior } from "./nation/NationAttackBehavior";
 import { NationEmojiBehavior } from "./nation/NationEmojiBehavior";
 import { NationMIRVBehavior } from "./nation/NationMIRVBehavior";
+import { NationModBehavior } from "./nation/NationModBehavior";
 import { NationNukeBehavior } from "./nation/NationNukeBehavior";
 import { NationStructureBehavior } from "./nation/NationStructureBehavior";
 import { NationWarshipBehavior } from "./nation/NationWarshipBehavior";
@@ -266,6 +267,9 @@ export class NationExecution implements Execution {
     this.attackBehavior.maybeAttack();
     this.warshipBehavior.counterWarshipInfestation();
     this.nukeBehavior.maybeSendNuke();
+    // 모드 기능(업그레이드/연구/폭탄 장착/새 건물)도 쓴다
+    // 상태가 없는 행동이라 필드로 들고 있지 않는다 (스냅샷 비교에 영향 없음)
+    new NationModBehavior(this.mg, this.player).think();
   }
 
   private initializeBehaviors(): void {

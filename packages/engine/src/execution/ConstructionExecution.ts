@@ -15,6 +15,11 @@ import type {
   SnapshotWriter,
 } from "../snapshot/SnapshotContext";
 import { CityExecution } from "./CityExecution";
+import { TankExecution } from "./TankExecution";
+import { AATurretExecution } from "./AATurretExecution";
+import { CivilAirportExecution } from "./CivilAirportExecution";
+import { AirfieldExecution } from "./AirfieldExecution";
+import { BunkerExecution } from "./BunkerExecution";
 import { DefensePostExecution } from "./DefensePostExecution";
 import { FactoryExecution } from "./FactoryExecution";
 import { MirvExecution } from "./MIRVExecution";
@@ -118,6 +123,7 @@ export class ConstructionExecution implements Execution {
     const player = this.player;
     switch (this.constructionType) {
       case UnitType.AtomBomb:
+      case UnitType.BunkerBuster:
       case UnitType.HydrogenBomb: {
         const count = this.amount ?? 1;
         for (let i = 0; i < count; i++) {
@@ -138,6 +144,9 @@ export class ConstructionExecution implements Execution {
       }
       case UnitType.MIRV:
         this.mg.addExecution(new MirvExecution(player, this.tile));
+        break;
+      case UnitType.Tank:
+        this.mg.addExecution(new TankExecution(player, this.tile));
         break;
       case UnitType.Warship:
         this.mg.addExecution(
@@ -164,6 +173,18 @@ export class ConstructionExecution implements Execution {
       case UnitType.Factory:
         this.mg.addExecution(new FactoryExecution(this.structure!));
         break;
+      case UnitType.AATurret:
+        this.mg.addExecution(new AATurretExecution(this.structure!));
+        break;
+      case UnitType.CivilAirport:
+        this.mg.addExecution(new CivilAirportExecution(this.structure!));
+        break;
+      case UnitType.Airfield:
+        this.mg.addExecution(new AirfieldExecution(this.structure!));
+        break;
+      case UnitType.Bunker:
+        this.mg.addExecution(new BunkerExecution(this.structure!));
+        break;
       default:
         console.warn(
           `unit type ${this.constructionType} cannot be constructed`,
@@ -180,6 +201,10 @@ export class ConstructionExecution implements Execution {
       case UnitType.SAMLauncher:
       case UnitType.City:
       case UnitType.Factory:
+      case UnitType.Bunker:
+      case UnitType.Airfield:
+      case UnitType.AATurret:
+      case UnitType.CivilAirport:
         return true;
       default:
         return false;

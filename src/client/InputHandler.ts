@@ -331,6 +331,8 @@ export class AutoUpgradeEvent implements GameEvent {
   ) {}
 }
 
+export class ToggleModPanelEvent implements GameEvent {}
+
 export class ToggleCoordinateGridEvent implements GameEvent {
   constructor(public readonly enabled: boolean) {}
 }
@@ -912,6 +914,14 @@ export class InputHandler {
             this.alternateView = true;
             this.eventBus.emit(new AlternateViewEvent(true));
           }
+        }
+
+        if (
+          this.keybindMatchesEvent(e, this.keybinds.modPanel) &&
+          !e.repeat
+        ) {
+          e.preventDefault();
+          this.eventBus.emit(new ToggleModPanelEvent());
         }
 
         if (

@@ -29,6 +29,13 @@ import { GameView } from "../../view";
 const warshipIcon = assetUrl("images/BattleshipIconWhite.svg");
 const cityIcon = assetUrl("images/CityIconWhite.svg");
 const factoryIcon = assetUrl("images/FactoryIconWhite.svg");
+// 모드 건물/유닛 전용 아이콘 (기존 건물과 모양이 겹치지 않게 따로 그림)
+const bunkerIcon = assetUrl("images/BunkerIconWhite.svg");
+const skyportIcon = assetUrl("images/SkyportIconWhite.svg");
+const aaTurretIcon = assetUrl("images/AATurretIconWhite.svg");
+const civilAirportIcon = assetUrl("images/CivilAirportIconWhite.svg");
+const tankIcon = assetUrl("images/TankIconWhite.svg");
+const bunkerBusterIcon = assetUrl("images/BunkerBusterIconWhite.svg");
 const goldCoinIcon = assetUrl("images/GoldCoinIcon.svg");
 const mirvIcon = assetUrl("images/MIRVIcon.svg");
 const missileSiloIcon = assetUrl("images/MissileSiloIconWhite.svg");
@@ -53,6 +60,13 @@ const buildTable: BuildItemDisplay[][] = [
       icon: atomBombIcon,
       description: "build_menu.desc.atom_bomb",
       key: "unit_type.atom_bomb",
+      countable: false,
+    },
+    {
+      unitType: UnitType.BunkerBuster,
+      icon: bunkerBusterIcon,
+      description: "build_menu.desc.bunker_buster",
+      key: "unit_type.bunker_buster",
       countable: false,
     },
     {
@@ -102,6 +116,41 @@ const buildTable: BuildItemDisplay[][] = [
       icon: shieldIcon,
       description: "build_menu.desc.defense_post",
       key: "unit_type.defense_post",
+      countable: true,
+    },
+    {
+      unitType: UnitType.CivilAirport,
+      icon: civilAirportIcon,
+      description: "build_menu.desc.civil_airport",
+      key: "unit_type.civil_airport",
+      countable: true,
+    },
+    {
+      unitType: UnitType.Tank,
+      icon: tankIcon,
+      description: "build_menu.desc.tank",
+      key: "unit_type.tank",
+      countable: true,
+    },
+    {
+      unitType: UnitType.AATurret,
+      icon: aaTurretIcon,
+      description: "build_menu.desc.aa_turret",
+      key: "unit_type.aa_turret",
+      countable: true,
+    },
+    {
+      unitType: UnitType.Airfield,
+      icon: skyportIcon,
+      description: "build_menu.desc.airfield",
+      key: "unit_type.airfield",
+      countable: true,
+    },
+    {
+      unitType: UnitType.Bunker,
+      icon: bunkerIcon,
+      description: "build_menu.desc.bunker",
+      key: "unit_type.bunker",
       countable: true,
     },
     {

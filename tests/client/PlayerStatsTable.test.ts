@@ -168,8 +168,9 @@ describe("PlayerStatsTable", () => {
         text(candidate.querySelector("th")) === "player_stats_table.building",
     );
     expect(buildings, "buildings table should exist").toBeDefined();
-    // The six structures, with the warship row moved to its own section.
-    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(6);
+    // 기본 건물 6개 + 모드로 추가한 5개(벙커, 스카이포트, 대공 터렛, 탱크, 민간 공항).
+    // 전함 행은 별도 구역으로 빠진다.
+    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(11);
     expect(buildings?.textContent).not.toContain("unit_type.warship");
 
     expect(columnsOf(table, "player_stats_table.warship_stats")).toEqual({

@@ -27,7 +27,8 @@ export function getDefaultKeybinds(isMac: boolean): Record<string, string> {
   return {
     toggleView: "Space",
     preventStacking: "KeyH",
-    coordinateGrid: "KeyM",
+    coordinateGrid: "Shift+KeyG",
+    modPanel: "KeyM",
     performanceOverlay: "Shift+KeyD",
     buildCity: "Digit1",
     buildFactory: "Digit2",

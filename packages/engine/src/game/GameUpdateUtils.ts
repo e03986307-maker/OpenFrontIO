@@ -65,6 +65,7 @@ export function diffPlayerUpdate(
     prev.isLobbyCreator === next.isLobbyCreator &&
     numberArrayEqual(prev.allies, next.allies) &&
     numberArrayEqual(prev.targets, next.targets) &&
+    numberArrayEqual(prev.modLevels as number[], next.modLevels as number[]) &&
     stringArrayEqual(
       prev.outgoingAllianceRequests,
       next.outgoingAllianceRequests,
@@ -132,6 +133,10 @@ export function diffPlayerUpdate(
   setIfDifferent("isLobbyCreator", prev.isLobbyCreator === next.isLobbyCreator);
   setIfDifferent("allies", numberArrayEqual(prev.allies, next.allies));
   setIfDifferent("targets", numberArrayEqual(prev.targets, next.targets));
+  setIfDifferent(
+    "modLevels",
+    numberArrayEqual(prev.modLevels as number[], next.modLevels as number[]),
+  );
   setIfDifferent(
     "outgoingAllianceRequests",
     stringArrayEqual(

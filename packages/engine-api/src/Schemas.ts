@@ -26,6 +26,9 @@ export type Intent =
   | AttackIntent
   | CancelAttackIntent
   | BoatAttackIntent
+  | AirliftIntent
+  | ModUpgradeIntent
+  | ModEquipIntent
   | CancelBoatIntent
   | AllianceRequestIntent
   | AllianceRejectIntent
@@ -52,6 +55,9 @@ export type AttackIntent = z.infer<typeof AttackIntentSchema>;
 export type CancelAttackIntent = z.infer<typeof CancelAttackIntentSchema>;
 export type SpawnIntent = z.infer<typeof SpawnIntentSchema>;
 export type BoatAttackIntent = z.infer<typeof BoatAttackIntentSchema>;
+export type AirliftIntent = z.infer<typeof AirliftIntentSchema>;
+export type ModUpgradeIntent = z.infer<typeof ModUpgradeIntentSchema>;
+export type ModEquipIntent = z.infer<typeof ModEquipIntentSchema>;
 export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
@@ -439,6 +445,23 @@ export const BoatAttackIntentSchema = z.object({
   dst: zb.uint(),
 });
 
+export const ModEquipIntentSchema = z.object({
+  type: z.literal("modEquip"),
+  slot: z.string().max(10),
+  variant: zb.uint(),
+});
+
+export const ModUpgradeIntentSchema = z.object({
+  type: z.literal("modUpgrade"),
+  key: z.string().max(40),
+});
+
+export const AirliftIntentSchema = z.object({
+  type: z.literal("airlift"),
+  troops: zb.float({ min: 0 }),
+  dst: zb.uint(),
+});
+
 export const AllianceRequestIntentSchema = z.object({
   type: z.literal("allianceRequest"),
   recipient: MappedID,
@@ -573,6 +596,9 @@ export const IntentSchema = z.discriminatedUnion("type", [
   SpawnIntentSchema,
   MarkDisconnectedIntentSchema,
   BoatAttackIntentSchema,
+  AirliftIntentSchema,
+  ModUpgradeIntentSchema,
+  ModEquipIntentSchema,
   CancelBoatIntentSchema,
   AllianceRequestIntentSchema,
   AllianceRejectIntentSchema,

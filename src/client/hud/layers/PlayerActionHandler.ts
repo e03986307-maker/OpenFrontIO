@@ -4,6 +4,7 @@ import {
   SendAllianceExtensionIntentEvent,
   SendAllianceRequestIntentEvent,
   SendAttackIntentEvent,
+  SendAirliftIntentEvent,
   SendBoatAttackIntentEvent,
   SendBreakAllianceIntentEvent,
   SendDeleteUnitIntentEvent,
@@ -35,6 +36,15 @@ export class PlayerActionHandler {
   handleBoatAttack(player: PlayerView, targetTile: TileRef) {
     this.eventBus.emit(
       new SendBoatAttackIntentEvent(
+        targetTile,
+        this.uiState.attackRatio * player.troops(),
+      ),
+    );
+  }
+
+  handleAirlift(player: PlayerView, targetTile: TileRef) {
+    this.eventBus.emit(
+      new SendAirliftIntentEvent(
         targetTile,
         this.uiState.attackRatio * player.troops(),
       ),

@@ -1,3 +1,4 @@
+import { modIndex } from "@openfront/engine-api/game/ModCatalog";
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   BuildableUnit,
@@ -213,7 +214,16 @@ export class PlayerView implements PlayerLike {
    * Update mutable state in place. Called by GameView.update() each tick the
    * player appears in the PlayerUpdate stream.
    */
+  private _modLevels: number[] = [];
+
+  /** 모드 업그레이드/연구 단계 (ModCatalog 항목 번호 순서) */
+  modLevel(key: string): number {
+    const i = modIndex(key);
+    return i < 0 ? 0 : (this._modLevels[i] ?? 0);
+  }
+
   applyUpdate(pu: PlayerUpdate): void {
+    if (pu.modLevels !== undefined) this._modLevels = [...pu.modLevels];
     applyStateUpdate(this.state, pu);
     // applyStateUpdate refreshes outgoingEmojis every tick; re-apply the
     // "Disable emojis" setting so live emojis stay hidden when it's off (#4430).

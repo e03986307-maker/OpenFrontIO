@@ -43,6 +43,7 @@ import { OnboardingOverlay } from "./layers/OnboardingOverlay";
 import { PerformanceOverlay } from "./layers/PerformanceOverlay";
 import { PlayerInfoOverlay } from "./layers/PlayerInfoOverlay";
 import { PlayerPanel } from "./layers/PlayerPanel";
+import { ModPanel } from "./layers/ModPanel";
 import { ReplayPanel } from "./layers/ReplayPanel";
 import { SettingsModal } from "./layers/SettingsModal";
 import { SpawnTimer } from "./layers/SpawnTimer";
@@ -180,6 +181,13 @@ export function createRenderer(
   }
   replayPanel.eventBus = eventBus;
   replayPanel.game = game;
+
+  const modPanel = document.querySelector("mod-panel") as ModPanel;
+  if (!(modPanel instanceof ModPanel)) {
+    console.error("mod panel not found");
+  }
+  modPanel.eventBus = eventBus;
+  modPanel.game = game;
 
   const gameRightSidebar = document.querySelector(
     "game-right-sidebar",
@@ -377,6 +385,7 @@ export function createRenderer(
     winModal,
     newLobbyPrompt,
     replayPanel,
+    modPanel,
     settingsModal,
     playerPanel,
     headsUpMessage,

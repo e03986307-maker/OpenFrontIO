@@ -16,6 +16,10 @@ import type { RendererConfig, UnitState } from "../../types";
 import {
   STRUCTURE_TYPES,
   UT_CITY,
+  UT_AA_TURRET,
+  UT_AIRFIELD,
+  UT_BUNKER,
+  UT_CIVIL_AIRPORT,
   UT_DEFENSE_POST,
   UT_FACTORY,
   UT_MISSILE_SILO,
@@ -51,6 +55,10 @@ const STRUCTURE_ORDER = [
   UT_DEFENSE_POST,
   UT_SAM_LAUNCHER,
   UT_MISSILE_SILO,
+  UT_BUNKER,
+  UT_AIRFIELD,
+  UT_AA_TURRET,
+  UT_CIVIL_AIRPORT,
 ] as const;
 
 /** Max characters per level label (handles up to "99"). */

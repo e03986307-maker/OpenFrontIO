@@ -21,6 +21,11 @@ const BUILDING_ORDER = {
   defp: 4,
   silo: 5,
   saml: 6,
+  bunk: 7,
+  airf: 8,
+  aatr: 9,
+  tank: 10,
+  capt: 11,
 } as const satisfies Record<
   Exclude<(typeof otherUnits)[number], "wshp">,
   number
@@ -47,6 +52,12 @@ const UNIT_LABEL_KEYS = {
   hbomb: "unit_type.hydrogen_bomb",
   mirv: "unit_type.mirv",
   mirvw: "player_stats_table.unit.mirvw",
+  bunk: "unit_type.bunker",
+  bbust: "unit_type.bunker_buster",
+  airf: "unit_type.airfield",
+  aatr: "unit_type.aa_turret",
+  tank: "unit_type.tank",
+  capt: "unit_type.civil_airport",
   trade: "player_stats_table.unit.trade",
   trans: "player_stats_table.unit.trans",
 } as const satisfies Record<

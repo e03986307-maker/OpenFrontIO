@@ -32,6 +32,7 @@ import {
   SendUpgradeStructureIntentEvent,
 } from "../../Transport";
 const allianceIcon = assetUrl("images/AllianceIconWhite.svg");
+const airborneIcon = assetUrl("images/AirborneIconWhite.svg");
 const boatIcon = assetUrl("images/BoatIconWhite.svg");
 const buildIcon = assetUrl("images/BuildIconWhite.svg");
 const chatIcon = assetUrl("images/ChatIconWhite.svg");
@@ -126,6 +127,7 @@ export const COLORS = {
 export enum Slot {
   Info = "info",
   Boat = "boat",
+  Airlift = "airlift",
   Build = "build",
   Attack = "attack",
   Ally = "ally",
@@ -405,6 +407,7 @@ function getAllEnabledUnits(
 
   if (myPlayer) {
     Structures.types.forEach(addIfEnabled);
+    addIfEnabled(UnitType.Tank); // 탱크는 건물이 아니지만 내 땅에 놓는다
   } else {
     BuildableAttacks.types.forEach(addIfEnabled);
   }
@@ -731,6 +734,23 @@ const boatMenuElement: MenuElement = {
   },
 };
 
+// 에어본(병사 수송기): 스카이포트가 있어야 사용 가능, 출격당 3M
+const airliftMenuElement: MenuElement = {
+  id: Slot.Airlift,
+  name: "airlift",
+  disabled: (params: MenuElementParams) =>
+    !params.game.isLand(params.tile) ||
+    params.myPlayer.totalUnitLevels(UnitType.Airfield) === 0,
+  icon: airborneIcon,
+  color: COLORS.boat,
+
+  action: async (params: MenuElementParams) => {
+    params.playerActionHandler.handleAirlift(params.myPlayer, params.tile);
+
+    params.closeMenu();
+  },
+};
+
 export const centerButtonElement: CenterButtonElement = {
   disabled: (params: MenuElementParams): boolean => {
     const tileOwner = params.game.owner(params.tile);
@@ -814,6 +834,7 @@ export const rootMenuElement: MenuElement = {
         ? [deleteUnitElement, allyRequestElement, buildMenuElement]
         : [
             isAllied && !isDisconnected ? allyBreakElement : boatMenuElement,
+            isAllied && !isDisconnected ? null : airliftMenuElement,
             inExtensionWindow ? allyExtendElement : allyRequestElement,
             showDonateInsteadOfAttack
               ? donateGoldRadialElement

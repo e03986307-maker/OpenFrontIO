@@ -136,6 +136,24 @@ export class SendBoatAttackIntentEvent implements GameEvent {
   ) {}
 }
 
+export class SendModUpgradeIntentEvent implements GameEvent {
+  constructor(public readonly key: string) {}
+}
+
+export class SendModEquipIntentEvent implements GameEvent {
+  constructor(
+    public readonly slot: string,
+    public readonly variant: number,
+  ) {}
+}
+
+export class SendAirliftIntentEvent implements GameEvent {
+  constructor(
+    public readonly dst: TileRef,
+    public readonly troops: number,
+  ) {}
+}
+
 export class BuildUnitIntentEvent implements GameEvent {
   constructor(
     public readonly unit: UnitType,
@@ -326,6 +344,15 @@ export class Transport {
     );
     this.subscribe(SendBoatAttackIntentEvent, (e) =>
       this.onSendBoatAttackIntent(e),
+    );
+    this.subscribe(SendModUpgradeIntentEvent, (e) =>
+      this.sendIntent({ type: "modUpgrade", key: e.key }),
+    );
+    this.subscribe(SendModEquipIntentEvent, (e) =>
+      this.sendIntent({ type: "modEquip", slot: e.slot, variant: e.variant }),
+    );
+    this.subscribe(SendAirliftIntentEvent, (e) =>
+      this.onSendAirliftIntent(e),
     );
     this.subscribe(SendTargetPlayerIntentEvent, (e) =>
       this.onSendTargetPlayerIntent(e),
@@ -828,6 +855,15 @@ export class Transport {
     if (!this.isSendableTroops("boat", event.troops)) return;
     this.sendIntent({
       type: "boat",
+      troops: event.troops,
+      dst: event.dst,
+    });
+  }
+
+  private onSendAirliftIntent(event: SendAirliftIntentEvent) {
+    if (!this.isSendableTroops("airlift", event.troops)) return;
+    this.sendIntent({
+      type: "airlift",
       troops: event.troops,
       dst: event.dst,
     });

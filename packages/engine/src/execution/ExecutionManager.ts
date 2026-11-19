@@ -29,6 +29,9 @@ import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
 import { SpawnExecution } from "./SpawnExecution";
 import { TargetPlayerExecution } from "./TargetPlayerExecution";
+import { ModEquipExecution } from "./ModEquipExecution";
+import { ModUpgradeExecution } from "./ModUpgradeExecution";
+import { AirliftExecution } from "./AirliftExecution";
 import { TransportShipExecution } from "./TransportShipExecution";
 import { TribeSpawner } from "./TribeSpawner";
 import { UpgradeStructureExecution } from "./UpgradeStructureExecution";
@@ -91,6 +94,12 @@ export class Executor {
         );
       case "boat":
         return new TransportShipExecution(player, intent.dst, intent.troops);
+      case "modEquip":
+        return new ModEquipExecution(player, intent.slot, intent.variant);
+      case "modUpgrade":
+        return new ModUpgradeExecution(player, intent.key);
+      case "airlift":
+        return new AirliftExecution(player, intent.dst, intent.troops);
       case "allianceRequest":
         return new AllianceRequestExecution(player, intent.recipient);
       case "allianceReject":

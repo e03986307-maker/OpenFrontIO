@@ -21,6 +21,8 @@ export const UT_SAM_MISSILE = "SAMMissile" as const;
 export const UT_SHELL = "Shell" as const;
 export const UT_MIRV_WARHEAD = "MIRV Warhead" as const;
 export const UT_TRAIN = "Train" as const;
+export const UT_TANK = "Tank" as const;
+export const UT_AIRBORNE = "Airborne" as const;
 
 // Structures
 export const UT_CITY = "City" as const;
@@ -29,6 +31,11 @@ export const UT_FACTORY = "Factory" as const;
 export const UT_DEFENSE_POST = "Defense Post" as const;
 export const UT_SAM_LAUNCHER = "SAM Launcher" as const;
 export const UT_MISSILE_SILO = "Missile Silo" as const;
+// 모드로 추가한 구조물
+export const UT_BUNKER = "Bunker" as const;
+export const UT_AIRFIELD = "Airfield" as const;
+export const UT_AA_TURRET = "AA Turret" as const;
+export const UT_CIVIL_AIRPORT = "Civil Airport" as const;
 
 // ---------------------------------------------------------------------------
 // Derived sets
@@ -41,6 +48,10 @@ export const STRUCTURE_TYPES: ReadonlySet<string> = new Set([
   UT_DEFENSE_POST,
   UT_SAM_LAUNCHER,
   UT_MISSILE_SILO,
+  UT_BUNKER,
+  UT_AIRFIELD,
+  UT_AA_TURRET,
+  UT_CIVIL_AIRPORT,
 ]);
 
 export const NUKE_TYPES: ReadonlySet<string> = new Set([
@@ -62,6 +73,7 @@ export const SMOOTHED_NUKE_TYPES: ReadonlySet<string> = new Set([
 /** Units that leave a trail on the map (TrailManager). */
 export const TRAIL_TYPES: ReadonlySet<string> = new Set([
   UT_TRANSPORT,
+  UT_AIRBORNE,
   UT_ATOM_BOMB,
   UT_HYDROGEN_BOMB,
   UT_MIRV,
@@ -99,4 +111,10 @@ export const ALL_UNIT_TYPES = [
   UT_SAM_LAUNCHER,
   UT_MISSILE_SILO,
   UT_TRAIN,
+  UT_TANK,
+  UT_BUNKER,
+  UT_AIRFIELD,
+  UT_AA_TURRET,
+  UT_CIVIL_AIRPORT,
+  UT_AIRBORNE,
 ] as const;

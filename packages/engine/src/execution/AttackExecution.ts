@@ -1,3 +1,12 @@
+import {
+  BIO_ATTACKER_LOSS_MUL,
+  BIO_SPEED_MUL,
+  bestWeaponMultiplier,
+  tankLossFactor,
+  tankSpeedFactor,
+  troopUpgradeMultiplier,
+} from "@openfront/engine-api/game/ModCatalog";
+import { TANK_SUPPORT_RANGE } from "./TankExecution";
 import { GameMap, TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   Difficulty,
@@ -33,6 +42,9 @@ import type {
 import { FlatBinaryHeap } from "./utils/FlatBinaryHeap"; // adjust path if needed
 
 const malusForRetreat = 25;
+/** 오염 지대를 찾아볼 최대 반경 (생화학탄의 가장 큰 반경보다 크게) */
+const BIO_MAX_SCAN_RANGE = 400;
+
 export class AttackExecution implements Execution {
   private active: boolean = true;
   private toConquer = new FlatBinaryHeap();
@@ -343,11 +355,57 @@ export class AttackExecution implements Execution {
         continue;
       }
       this.addNeighbors(tileToConquer);
-      const { attackerTroopLoss, defenderTroopLoss, tickFraction } = this.mg
+      const logic = this.mg
         .config()
         .attackLogic(
           this.attackLogicInput(troopCount, tileToConquer, borderSize),
         );
+      // 탱크 지원: 근처에 아군 탱크가 있으면 병력 손실 40% 감소, 점령 속도 30% 증가
+      const hasTank = this.mg.hasUnitNearby(
+        tileToConquer,
+        TANK_SUPPORT_RANGE,
+        UnitType.Tank,
+        this._owner.id(),
+      );
+      // 병사 업그레이드 (체력/공격력/방어력, 단계마다 +10%)
+      const atkMul =
+        troopUpgradeMultiplier(this._owner.modLevel("troop_atk")) *
+        bestWeaponMultiplier((k) => this._owner.modLevel(k));
+      const tankTech = this._owner.modLevel("tank_tech");
+      const hpMul = troopUpgradeMultiplier(this._owner.modLevel("troop_hp"));
+      const defender = this.target.isPlayer() ? this.target : null;
+      const defMul = defender
+        ? troopUpgradeMultiplier(defender.modLevel("troop_def"))
+        : 1;
+      const defHpMul = defender
+        ? troopUpgradeMultiplier(defender.modLevel("troop_hp"))
+        : 1;
+      // 생화학 오염 지대: 점령 비용 x6, 속도 1/3
+      const inBioZone = this.mg.anyUnitNearby(
+        tileToConquer,
+        BIO_MAX_SCAN_RANGE,
+        [UnitType.BioZone],
+        (z) =>
+          this.mg.euclideanDistSquared(z.tile(), tileToConquer) <=
+          z.troops() * z.troops(),
+      );
+      const bioLoss = inBioZone ? BIO_ATTACKER_LOSS_MUL : 1;
+      const bioSlow = inBioZone ? BIO_SPEED_MUL : 1;
+      const attackerTroopLoss =
+        (bioLoss *
+          ((hasTank
+            ? logic.attackerTroopLoss * tankLossFactor(tankTech)
+            : logic.attackerTroopLoss) *
+            defMul)) /
+        hpMul;
+      const tickFraction =
+        (bioSlow *
+          ((hasTank
+            ? logic.tickFraction * tankSpeedFactor(tankTech)
+            : logic.tickFraction) *
+            defMul)) /
+        atkMul;
+      const defenderTroopLoss = (logic.defenderTroopLoss * atkMul) / defHpMul;
       tickBudget -= tickFraction;
       troopCount -= attackerTroopLoss;
       this.attack.setTroops(troopCount);
