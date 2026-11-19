@@ -67,7 +67,7 @@ function variantPrice(
   return (game, player) => {
     const v = equippedVariant(slot, (k) => player.modLevel(k));
     const cost =
-      v?.fixedPrice !== undefined ? v.fixedPrice : base(game, player);
+      v?.fixedPrice ?? base(game, player);
     const factor =
       (v?.fixedPrice !== undefined ? 1 : (v?.priceMul ?? 1)) *
       nukePriceFactor(player.modLevel("nuke_cheap"));
