@@ -553,7 +553,8 @@ describe("Nation AI uses mod features", () => {
       n.addGold(5_000_000n);
       ai.think();
       executeTicks(g, 3);
-    }+    const levels = ["troop_atk", "troop_hp", "troop_def"].map((k) =>
+    }
+    const levels = ["troop_atk", "troop_hp", "troop_def"].map((k) =>
       n.modLevel(k),
     );
     expect(levels.every((l) => l > 0)).toBe(true);
