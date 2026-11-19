@@ -24,6 +24,7 @@ jobs:
       - name: Install npm
         run: npm install --global npm@12.1.0
       - name: Check and apply patch
+        if: hashFiles('mod.patch') != ''
         run: |
           git apply --recount --binary --check mod.patch
           git apply --recount --binary mod.patch
