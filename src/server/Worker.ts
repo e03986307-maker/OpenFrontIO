@@ -1048,7 +1048,7 @@ export async function startWorker() {
 
   // The load balancer will handle routing to this server based on path
   const PORT = ServerEnv.workerPortByIndex(workerId);
-  server.listen(PORT, () => {
+  server.listen(PORT, "127.0.0.1", () => {
     log.info(`running on http://localhost:${PORT}`);
     log.info(`Handling requests with path prefix /w${workerId}/`);
     // Signal to the master process that this worker is ready
