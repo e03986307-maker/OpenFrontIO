@@ -116,4 +116,5 @@ else
 fi
 EOF
 RUN chmod +x /usr/local/bin/start.sh
+EXPOSE 80
 ENTRYPOINT ["/usr/local/bin/start.sh"]
