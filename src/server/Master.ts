@@ -284,7 +284,7 @@ export async function startMaster() {
     );
   });
   const PORT = 3000;
-  server.listen(PORT, () => {
+  server.listen(PORT, "127.0.0.1", () => {
     log.info(`Master HTTP server listening on port ${PORT}`);
   });
 
