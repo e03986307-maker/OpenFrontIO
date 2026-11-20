@@ -1,6 +1,9 @@
 # Use an official Node runtime as the base image
 FROM node:24-slim AS base
 WORKDIR /usr/src/app
+
+# Standalone Render deployments run in the development game environment unless overridden.
+ENV GAME_ENV=dev
 RUN npm install --global --ignore-scripts npm@12.1.0
 
 # Build stage - install ALL dependencies and build
