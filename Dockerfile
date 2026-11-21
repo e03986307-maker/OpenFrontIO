@@ -48,6 +48,9 @@ RUN npm run typecheck \
 
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT="$GIT_COMMIT"
+# Use the public OpenFront API for account/shop data while keeping the
+# standalone server in dev mode (guest play does not need a private API key).
+ENV API_DOMAIN=api.openfront.io
 RUN npm run build-prod
 
 # Production dependencies stage - separate from build
