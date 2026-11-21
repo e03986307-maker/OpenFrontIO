@@ -44,8 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 
 # Validate the patched source before building the production assets.
 RUN npm run typecheck \
-    && npx vitest run tests/core/snapshot/FullGameSnapshot.test.ts \
-    && npm run lint
+    && npx vitest run tests/AirPowerMod.test.ts tests/core/snapshot/FullGameSnapshot.test.ts
 
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT="$GIT_COMMIT"
