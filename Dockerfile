@@ -33,6 +33,19 @@ COPY packages ./packages
 # container build runs build-prod from a copied tree.
 COPY scripts ./scripts
 
+# Apply the supplied mod patch to the clean upstream source tree.
+COPY mod.patch ./mod.patch
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && git apply --recount --binary --check mod.patch \
+    && git apply --recount --binary mod.patch \
+    && rm mod.patch \
+    && rm -rf /var/lib/apt/lists/*
+
+# Validate the patched source before building the production assets.
+RUN npm run typecheck \
+    && npx vitest run tests/AirPowerMod.test.ts tests/core/snapshot/FullGameSnapshot.test.ts \
+    && npm run lint
+
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT="$GIT_COMMIT"
 RUN npm run build-prod
@@ -84,16 +97,17 @@ COPY package*.json ./
 # Copy built artifacts from build stage
 COPY --from=build /usr/src/app/static ./static
 
-COPY resources ./resources
+# Use the same patched source tree that passed validation in the build stage.
+COPY --from=build /usr/src/app/resources ./resources
 
 # Remove maps because they are not used by the server.
 RUN rm -rf ./resources/maps
 COPY tsconfig.json tsconfig.base.json ./
 COPY client-api.json ./
-COPY src ./src
-# node_modules/@openfront/* are symlinks into packages/; without this copy
-# they dangle and the server dies at boot.
-COPY packages ./packages
+COPY --from=build /usr/src/app/src ./src
+# node_modules/@openfront/* are symlinks into packages/; copy patched packages
+# so the symlinks resolve to the modded runtime code.
+COPY --from=build /usr/src/app/packages ./packages
 
 
 ARG GIT_COMMIT=unknown
