@@ -69,7 +69,7 @@ index 5332748..27cd62e 100644
    AllianceRequestIntentSchema,
    AllianceRejectIntentSchema,
 diff --git a/packages/engine-api/src/StatsSchemas.ts b/packages/engine-api/src/StatsSchemas.ts
-index ff2925f..46c9ddb 100644
+index ff2925f..dff690a 100644
 --- a/packages/engine-api/src/StatsSchemas.ts
 +++ b/packages/engine-api/src/StatsSchemas.ts
 @@ -2,20 +2,22 @@ import { zb, ZbEncodeError } from "@openfront/zbin";
@@ -97,19 +97,20 @@ index ff2925f..46c9ddb 100644
  } as const satisfies Record<NukeType, BombUnit>;
  
  export const boatUnits = ["trade", "trans"] as const;
-@@ -36,6 +38,11 @@ export const otherUnits = [
+@@ -36,6 +38,12 @@ export const otherUnits = [
    "silo",
    "saml",
    "fact",
 +  "bunk",
 +  "airf",
-+  "aatr",
 +  "tank",
 +  "capt",
++  "metr",
++  "town",
  ] as const;
  export const OtherUnitSchema = z.enum(otherUnits);
  export type OtherUnit = z.infer<typeof OtherUnitSchema>;
-@@ -46,7 +53,12 @@ export type OtherUnitType =
+@@ -46,7 +54,13 @@ export type OtherUnitType =
    | UnitType.Port
    | UnitType.SAMLauncher
    | UnitType.Warship
@@ -117,44 +118,47 @@ index ff2925f..46c9ddb 100644
 +  | UnitType.Factory
 +  | UnitType.Bunker
 +  | UnitType.Airfield
-+  | UnitType.AATurret
 +  | UnitType.Tank
-+  | UnitType.CivilAirport;
++  | UnitType.CivilAirport
++  | UnitType.Metropolis
++  | UnitType.Town;
  
  export const unitTypeToOtherUnit = {
    [UnitType.City]: "city",
-@@ -56,6 +68,11 @@ export const unitTypeToOtherUnit = {
+@@ -56,6 +70,12 @@ export const unitTypeToOtherUnit = {
    [UnitType.SAMLauncher]: "saml",
    [UnitType.Warship]: "wshp",
    [UnitType.Factory]: "fact",
 +  [UnitType.Bunker]: "bunk",
 +  [UnitType.Airfield]: "airf",
-+  [UnitType.AATurret]: "aatr",
 +  [UnitType.Tank]: "tank",
 +  [UnitType.CivilAirport]: "capt",
++  [UnitType.Metropolis]: "metr",
++  [UnitType.Town]: "town",
  } as const satisfies Record<OtherUnitType, OtherUnit>;
  
  // Attacks
 diff --git a/packages/engine-api/src/game/GameTypes.ts b/packages/engine-api/src/game/GameTypes.ts
-index c97c4ca..f48292b 100644
+index c97c4ca..5c33879 100644
 --- a/packages/engine-api/src/game/GameTypes.ts
 +++ b/packages/engine-api/src/game/GameTypes.ts
-@@ -208,6 +208,14 @@ export enum UnitType {
+@@ -208,6 +208,15 @@ export enum UnitType {
    MIRVWarhead = "MIRV Warhead",
    Train = "Train",
    Factory = "Factory",
 +  Bunker = "Bunker",
 +  Airfield = "Airfield",
-+  AATurret = "AA Turret",
 +  BunkerBuster = "Bunker Buster",
 +  Tank = "Tank",
 +  CivilAirport = "Civil Airport",
 +  BioZone = "Bio Zone",
 +  Airborne = "Airborne",
++  Metropolis = "Metropolis",
++  Town = "Town",
  }
  
  export enum TrainType {
-@@ -221,12 +229,14 @@ export const Nukes = unitTypeGroup([
+@@ -221,12 +230,14 @@ export const Nukes = unitTypeGroup([
    UnitType.HydrogenBomb,
    UnitType.MIRVWarhead,
    UnitType.MIRV,
@@ -169,18 +173,19 @@ index c97c4ca..f48292b 100644
    UnitType.Warship,
  ] as const);
  
-@@ -237,6 +247,10 @@ export const Structures = unitTypeGroup([
+@@ -237,6 +248,11 @@ export const Structures = unitTypeGroup([
    UnitType.MissileSilo,
    UnitType.Port,
    UnitType.Factory,
 +  UnitType.Bunker,
 +  UnitType.Airfield,
-+  UnitType.AATurret,
 +  UnitType.CivilAirport,
++  UnitType.Metropolis,
++  UnitType.Town,
  ] as const);
  
  export const BuildMenus = unitTypeGroup([
-@@ -247,6 +261,7 @@ export const BuildMenus = unitTypeGroup([
+@@ -247,6 +263,7 @@ export const BuildMenus = unitTypeGroup([
  export const PlayerBuildable = unitTypeGroup([
    ...BuildMenus.types,
    UnitType.TransportShip,
@@ -549,10 +554,21 @@ index 0000000..2ed0bca
 +/** 벙커: 폭격으로 인한 병력 손실 배율 (너프: 예전 0.1 = 90% 감소 -> 0.5 = 50% 감소) */
 +export const BUNKER_TROOP_LOSS_FACTOR = 0.5;
 diff --git a/packages/engine-lib/src/configuration/Config.ts b/packages/engine-lib/src/configuration/Config.ts
-index aee417f..f1e43b5 100644
+index aee417f..ab28ee1 100644
 --- a/packages/engine-lib/src/configuration/Config.ts
 +++ b/packages/engine-lib/src/configuration/Config.ts
-@@ -232,6 +232,37 @@ export class Config {
+@@ -84,6 +84,10 @@ const OVERTIME_DEFAULTS = {
+   dropPercentPerMinute: 2,
+ };
+ 
++/** 대도시가 주는 인구는 도시의 4배, 마을은 도시의 1/1.5배 */
++export const METROPOLIS_POP_MULTIPLIER = 4;
++export const TOWN_POP_DIVISOR = 1.5;
++
+ export class Config {
+   private unitInfoCache = new Map<UnitType, UnitInfo>();
+   constructor(
+@@ -232,6 +236,38 @@ export class Config {
        case UnitType.DefensePost:
          info = { constructionDuration: this.instantBuild() ? 0 : 5 * 10 };
          break;
@@ -563,14 +579,15 @@ index aee417f..f1e43b5 100644
 +        info = { constructionDuration: 0 }; // 폭탄이 터질 때 자동으로 생기는 오염 지대
 +        break;
 +      case UnitType.Tank:
-+        // 탱크 배치 시간 5초, 탱크끼리 싸울 수 있게 체력이 있다
++        // 탱크는 다량 생산이 빠르다: 배치 시간 0.5초. 탱크끼리 싸울 수 있게 체력이 있다
 +        info = {
-+          constructionDuration: this.instantBuild() ? 0 : 5 * 10,
++          constructionDuration: this.instantBuild() ? 0 : 5,
 +          maxHealth: 1200,
 +        };
 +        break;
 +      case UnitType.CivilAirport:
-+      case UnitType.AATurret:
++      case UnitType.Metropolis:
++      case UnitType.Town:
 +        info = {
 +          constructionDuration: this.instantBuild() ? 0 : 5 * 10,
 +          upgradable: true,
@@ -590,7 +607,7 @@ index aee417f..f1e43b5 100644
        case UnitType.SAMLauncher:
          info = {
            constructionDuration: this.instantBuild()
-@@ -253,6 +284,7 @@ export class Config {
+@@ -253,6 +289,7 @@ export class Config {
        case UnitType.HydrogenBomb:
        case UnitType.MIRV:
        case UnitType.MIRVWarhead:
@@ -598,7 +615,33 @@ index aee417f..f1e43b5 100644
        case UnitType.TradeShip:
        case UnitType.Train:
          info = {};
-@@ -427,6 +459,9 @@ export class Config {
+@@ -342,12 +379,20 @@ export class Config {
+   }
+ 
+   private troopCap(player: PlayerLike, withCities: boolean): number {
++    // 도시 레벨 합 x 25만. 대도시는 도시의 4배, 마을은 도시의 1/1.5배를 준다.
++    const levelsOf = (type: UnitType) =>
++      player
++        .units(type)
++        .filter((u) => !u.isUnderConstruction())
++        .map((u) => u.level())
++        .reduce((a, b) => a + b, 0);
+     const cityTroops = withCities
+-      ? player
+-          .units(UnitType.City)
+-          .filter((u) => !u.isUnderConstruction())
+-          .map((city) => city.level())
+-          .reduce((a, b) => a + b, 0) * this.cityTroopIncrease()
++      ? Math.floor(
++          (levelsOf(UnitType.City) +
++            levelsOf(UnitType.Metropolis) * METROPOLIS_POP_MULTIPLIER +
++            levelsOf(UnitType.Town) / TOWN_POP_DIVISOR) *
++            this.cityTroopIncrease(),
++        )
+       : 0;
+     const maxTroops =
+       player.type() === PlayerType.Human && this.hasInfiniteTroopsFor(player)
+@@ -427,6 +472,9 @@ export class Config {
          return { inner: 12, outer: 30 };
        case UnitType.HydrogenBomb:
          return { inner: 80, outer: 100 };
@@ -609,26 +652,27 @@ index aee417f..f1e43b5 100644
      throw new Error(`Unknown nuke type: ${unitType}`);
    }
 diff --git a/packages/engine-lib/src/game/PackedUnitUpdates.ts b/packages/engine-lib/src/game/PackedUnitUpdates.ts
-index 5c7ef72..0548aef 100644
+index 5c7ef72..b627ca6 100644
 --- a/packages/engine-lib/src/game/PackedUnitUpdates.ts
 +++ b/packages/engine-lib/src/game/PackedUnitUpdates.ts
-@@ -46,6 +46,14 @@ export const PACKED_UNIT_TYPES: readonly UnitType[] = [
+@@ -46,6 +46,15 @@ export const PACKED_UNIT_TYPES: readonly UnitType[] = [
    UnitType.MIRVWarhead, // 14
    UnitType.Train, // 15
    UnitType.Factory, // 16
 +  UnitType.Bunker, // 17
 +  UnitType.Airfield, // 18
-+  UnitType.AATurret, // 19
 +  UnitType.BunkerBuster, // 20
 +  UnitType.Tank, // 21
 +  UnitType.CivilAirport, // 22
 +  UnitType.BioZone, // 23
 +  UnitType.Airborne, // 24
++  UnitType.Metropolis, // 25
++  UnitType.Town, // 26
  ] as const;
  
  const UNIT_TYPE_TO_INT = new Map<UnitType, number>(
 diff --git a/packages/engine/src/configuration/EngineConfig.ts b/packages/engine/src/configuration/EngineConfig.ts
-index 3016f33..c56a50a 100644
+index 3016f33..e4d7903 100644
 --- a/packages/engine/src/configuration/EngineConfig.ts
 +++ b/packages/engine/src/configuration/EngineConfig.ts
 @@ -1,3 +1,8 @@
@@ -696,7 +740,7 @@ index 3016f33..c56a50a 100644
        case UnitType.MissileSilo:
          return this.costWrapper(() => 1_000_000, UnitType.MissileSilo);
        case UnitType.DefensePost:
-@@ -378,6 +408,26 @@ export class EngineConfig extends Config {
+@@ -378,6 +408,29 @@ export class EngineConfig extends Config {
            (numUnits: number) => Math.min(250_000, (numUnits + 1) * 50_000),
            UnitType.DefensePost,
          );
@@ -705,15 +749,18 @@ index 3016f33..c56a50a 100644
 +        return this.costWrapper(() => 0, UnitType.Airborne);
 +      case UnitType.BioZone:
 +        return this.costWrapper(() => 0, UnitType.BioZone);
++      case UnitType.Metropolis:
++        // 대도시: 가격 3.7M 고정 (인구 한도가 도시의 4배)
++        return this.costWrapper(() => 3_700_000, UnitType.Metropolis);
++      case UnitType.Town:
++        // 마을: 가격 0.6M 고정 (인구 한도가 도시의 1/1.5)
++        return this.costWrapper(() => 600_000, UnitType.Town);
 +      case UnitType.CivilAirport:
 +        // 민간 공항: 가격 5M 고정 (업그레이드도 같은 가격)
 +        return this.costWrapper(() => 5_000_000, UnitType.CivilAirport);
 +      case UnitType.Tank:
 +        // 탱크: 가격 15M 고정
 +        return this.costWrapper(() => 15_000_000, UnitType.Tank);
-+      case UnitType.AATurret:
-+        // 대공 터렛: 가격 7M 고정
-+        return this.costWrapper(() => 7_000_000, UnitType.AATurret);
 +      case UnitType.Airfield:
 +        // 스카이포트: 가격 10M 고정 (개수가 늘어도 안 오름)
 +        return this.costWrapper(() => 10_000_000, UnitType.Airfield);
@@ -723,7 +770,7 @@ index 3016f33..c56a50a 100644
        case UnitType.SAMLauncher:
          return this.costWrapper(
            (numUnits: number) => Math.min(3_000_000, (numUnits + 1) * 1_500_000),
-@@ -687,6 +737,7 @@ export class EngineConfig extends Config {
+@@ -687,6 +740,7 @@ export class EngineConfig extends Config {
      switch (unitType) {
        case UnitType.AtomBomb:
        case UnitType.HydrogenBomb:
@@ -731,103 +778,9 @@ index 3016f33..c56a50a 100644
          return 10;
        case UnitType.MIRV:
          return 15;
-diff --git a/packages/engine/src/execution/AATurretExecution.ts b/packages/engine/src/execution/AATurretExecution.ts
-new file mode 100644
-index 0000000..cd6bfba
---- /dev/null
-+++ b/packages/engine/src/execution/AATurretExecution.ts
-@@ -0,0 +1,88 @@
-+import { zRef } from "@openfront/engine-lib/snapshot/SnapshotType";
-+import { z } from "zod";
-+import { Execution, Game, Unit } from "../game/Game";
-+import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
-+import type {
-+  ExecRecord,
-+  SnapshotReader,
-+  SnapshotWriter,
-+} from "../snapshot/SnapshotContext";
-+
-+/** 대공 터렛 재사용 대기시간: 13초 (1초 = 10틱) */
-+export const AA_TURRET_COOLDOWN_TICKS = 13 * 10;
-+/** 대공 터렛이 영공을 지키는 반경 (타일) */
-+export const AA_TURRET_RANGE = 60;
-+
-+/** 터렛 레벨별 반경 / 쿨타임 */
-+export function aaTurretRange(level: number): number {
-+  return AA_TURRET_RANGE + 15 * (level - 1);
-+}
-+export function aaTurretCooldown(level: number): number {
-+  return Math.max(50, AA_TURRET_COOLDOWN_TICKS - 20 * (level - 1));
-+}
-+
-+/**
-+ * 대공 터렛: 영공으로 들어오는 적 수송기(에어본)를 격추한다.
-+ * 한 번 쏘면 13초 동안 다시 쏠 수 없다 (쿨타임은 AirliftExecution이 launch()로 시작).
-+ */
-+export class AATurretExecution implements Execution {
-+  private active = true;
-+  private mg: Game;
-+
-+  constructor(private turret: Unit) {}
-+
-+  init(mg: Game, ticks: number): void {
-+    this.mg = mg;
-+  }
-+
-+  tick(ticks: number): void {
-+    if (!this.turret.isActive()) {
-+      this.active = false;
-+      return;
-+    }
-+    // 쿨타임이 끝난 발사 기록 제거
-+    while (this.turret.missileTimerQueue().length > 0) {
-+      const front = this.turret.missileTimerQueue()[0];
-+      if (this.mg.ticks() - front < aaTurretCooldown(this.turret.level())) {
-+        break;
-+      }
-+      this.turret.reloadMissile();
-+    }
-+  }
-+
-+  isActive(): boolean {
-+    return this.active;
-+  }
-+
-+  activeDuringSpawnPhase(): boolean {
-+    return false;
-+  }
-+
-+  snapshot(w: SnapshotWriter): ExecRecord {
-+    return AATurretExecutionSnapshot.write({
-+      active: this.active,
-+      initialized: this.mg !== undefined,
-+      turret: w.unit(this.turret),
-+    });
-+  }
-+
-+  restoreSnapshot(s: AATurretState, r: SnapshotReader): void {
-+    this.active = s.active;
-+    if (s.initialized) this.mg = r.game;
-+    this.turret = r.unit(s.turret);
-+  }
-+}
-+
-+const AATurretStateSchema = z.object({
-+  active: z.boolean(),
-+  initialized: z.boolean(),
-+  turret: zRef(),
-+});
-+type AATurretState = z.infer<typeof AATurretStateSchema>;
-+
-+export const AATurretExecutionSnapshot = execSnapshotType({
-+  name: "AATurret",
-+  version: 1,
-+  schema: AATurretStateSchema,
-+  cls: () => AATurretExecution,
-+});
 diff --git a/packages/engine/src/execution/AirfieldExecution.ts b/packages/engine/src/execution/AirfieldExecution.ts
 new file mode 100644
-index 0000000..a5fca17
+index 0000000..6a14835
 --- /dev/null
 +++ b/packages/engine/src/execution/AirfieldExecution.ts
 @@ -0,0 +1,98 @@
@@ -848,7 +801,7 @@ index 0000000..a5fca17
 +
 +/**
 + * 스카이포트: 완공 후 60초마다 전투기 1대를 만들고, 최대 2대까지 보관한다.
-+ * 전투기는 이후 단계(수송기/대공 터렛)에서 사용한다.
++ * 전투기는 이후 단계(수송기 등)에서 사용한다.
 + */
 +export class AirfieldExecution implements Execution {
 +  private active = true;
@@ -931,10 +884,10 @@ index 0000000..a5fca17
 +});
 diff --git a/packages/engine/src/execution/AirliftExecution.ts b/packages/engine/src/execution/AirliftExecution.ts
 new file mode 100644
-index 0000000..9b326d7
+index 0000000..ef244a7
 --- /dev/null
 +++ b/packages/engine/src/execution/AirliftExecution.ts
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,219 @@
 +import { TileRef } from "@openfront/engine-api/game/GameMap";
 +import { UnitType } from "@openfront/engine-api/game/GameTypes";
 +import {
@@ -953,22 +906,19 @@ index 0000000..9b326d7
 +  SnapshotWriter,
 +} from "../snapshot/SnapshotContext";
 +import { airCapacity } from "@openfront/engine-api/game/ModCatalog";
-+import { AA_TURRET_RANGE, aaTurretRange } from "./AATurretExecution";
 +import { AttackExecution } from "./AttackExecution";
 +
-+/** 전투기 속도: 틱당 타일 수 (원래 1.5의 2.5배) */
++/** 병사 수송기 "에어본" 1회 출격 비용: 3M */
++export const AIRBORNE_COST = 3_000_000n;
++/** 비행기 속도: 틱당 타일 수 (원래 1.5의 2.5배) */
 +export const FIGHTER_TILES_PER_TICK = 3.75;
 +/** 착륙 거점이 포위 점령 규칙에서 제외되는 시간: 60초 */
 +export const BEACHHEAD_TICKS = 600;
-+/** 대공 터렛 검사 주기 (틱) */
-+const AA_CHECK_INTERVAL = 2;
-+
 +/**
-+ * 전투기 강습: 스카이포트의 전투기 1대가 병사를 싣고 날아가 다른 땅에 착륙해 공격한다.
-+ * 조건: 전투기를 가진 완공된 스카이포트. 전투기와 병사는 출발할 때 소모된다.
-+ * 날아가는 동안 지도에 비행기가 보이고, 항로(출발~목표 직선)가 트레일로 표시된다.
-+ * 적 대공 터렛 범위에 들어오면 날아가는 도중에도 격추된다.
-+ * 착륙한 땅은 60초 동안 "사방이 막힌 땅" 규칙(포위 점령)을 받지 않는다.
++ * 에어본: 스카이포트에서 병사만 싣고 날아가 다른 땅에 착륙해 공격한다.
++ * 조건: 완공된 스카이포트 1개 이상 + 3M. 병사는 출발 시 차감된다.
++ * 날아가는 동안 지도에 비행기(Airborne 유닛)가 보이고, 항로(출발~목표 직선)가
++ * 트레일로 표시된다. 착륙한 땅은 60초 동안 "사방이 막힌 땅" 규칙(포위 점령)을 받지 않는다.
 + */
 +export class AirliftExecution implements Execution {
 +  private active = true;
@@ -1002,13 +952,11 @@ index 0000000..9b326d7
 +      return this.fail("cannot attack that player");
 +    }
 +
-+    // 전투기가 남아 있는 완공된 스카이포트
 +    const airfields = this.attacker
 +      .units(UnitType.Airfield)
-+      .filter(
-+        (u) => u.isActive() && !u.isUnderConstruction() && u.troops() > 0,
-+      );
-+    if (airfields.length === 0) return this.fail("no fighter available");
++      .filter((u) => u.isActive() && !u.isUnderConstruction());
++    if (airfields.length === 0) return this.fail("no airfield");
++    if (this.attacker.gold() < AIRBORNE_COST) return this.fail("no gold");
 +
 +    this.troops = Math.min(
 +      this.troops,
@@ -1020,16 +968,14 @@ index 0000000..9b326d7
 +    // 가장 가까운 스카이포트에서 출발
 +    let best = Infinity;
 +    let from = airfields[0].tile();
-+    let base = airfields[0];
 +    for (const a of airfields) {
 +      const d = mg.euclideanDistSquared(a.tile(), this.dst);
 +      if (d < best) {
 +        best = d;
 +        from = a.tile();
-+        base = a;
 +      }
 +    }
-+    base.setTroops(base.troops() - 1); // 전투기 1대 소모
++    this.attacker.removeGold(AIRBORNE_COST);
 +    this.startTile = from;
 +    this.startTick = ticks;
 +    this.flightTicks = Math.max(
@@ -1062,25 +1008,6 @@ index 0000000..9b326d7
 +    return map.ref(Math.round(sx + dx * f), Math.round(sy + dy * f));
 +  }
 +
-+  /** 비행기 위치 근처의 쿨타임 끝난 적 대공 터렛 */
-+  private readyTurretNear(tile: TileRef): Unit | undefined {
-+    return this.mg
-+      .nearbyUnits(tile, AA_TURRET_RANGE + 15 * 9, [UnitType.AATurret])
-+      .filter(
-+        ({ unit, distSquared }) =>
-+          distSquared <= aaTurretRange(unit.level()) ** 2,
-+      )
-+      .map(({ unit }) => unit)
-+      .find(
-+        (u) =>
-+          u.isActive() &&
-+          !u.isUnderConstruction() &&
-+          !u.isInCooldown() &&
-+          u.owner() !== this.attacker &&
-+          !this.attacker.isFriendly(u.owner()),
-+      );
-+  }
-+
 +  tick(ticks: number): void {
 +    if (!this.active || this.plane === null) return;
 +    if (!this.plane.isActive()) {
@@ -1097,35 +1024,12 @@ index 0000000..9b326d7
 +
 +    const pos = this.positionAt(t);
 +    this.plane.move(pos);
-+
-+    // 날아가는 도중 대공 터렛에 격추
-+    if (t % AA_CHECK_INTERVAL === 0) {
-+      const turret = this.readyTurretNear(pos);
-+      if (turret !== undefined) {
-+        turret.launch();
-+        console.warn(
-+          `Airborne shot down by AA turret of ${turret.owner().name()}`,
-+        );
-+        this.plane.delete(false);
-+        this.active = false;
-+      }
-+    }
 +  }
 +
 +  /** 목표에 도착해 착륙하고 공격을 시작한다. */
 +  private land(): void {
 +    this.active = false;
 +    this.plane?.delete(false);
-+
-+    // 착륙 지점 영공에도 한 번 더 검사
-+    const turret = this.readyTurretNear(this.dst);
-+    if (turret !== undefined) {
-+      turret.launch();
-+      console.warn(
-+        `Airborne shot down by AA turret of ${turret.owner().name()}`,
-+      );
-+      return;
-+    }
 +
 +    const target = this.mg.owner(this.dst);
 +    if (target === this.attacker) {
@@ -1656,22 +1560,21 @@ index 0000000..b55fb9e
 +  cls: () => CivilAirportExecution,
 +});
 diff --git a/packages/engine/src/execution/ConstructionExecution.ts b/packages/engine/src/execution/ConstructionExecution.ts
-index 99d0900..0925557 100644
+index 99d0900..8a24fa1 100644
 --- a/packages/engine/src/execution/ConstructionExecution.ts
 +++ b/packages/engine/src/execution/ConstructionExecution.ts
-@@ -15,6 +15,11 @@ import type {
+@@ -15,6 +15,10 @@ import type {
    SnapshotWriter,
  } from "../snapshot/SnapshotContext";
  import { CityExecution } from "./CityExecution";
 +import { TankExecution } from "./TankExecution";
-+import { AATurretExecution } from "./AATurretExecution";
 +import { CivilAirportExecution } from "./CivilAirportExecution";
 +import { AirfieldExecution } from "./AirfieldExecution";
 +import { BunkerExecution } from "./BunkerExecution";
  import { DefensePostExecution } from "./DefensePostExecution";
  import { FactoryExecution } from "./FactoryExecution";
  import { MirvExecution } from "./MIRVExecution";
-@@ -118,6 +123,7 @@ export class ConstructionExecution implements Execution {
+@@ -118,6 +122,7 @@ export class ConstructionExecution implements Execution {
      const player = this.player;
      switch (this.constructionType) {
        case UnitType.AtomBomb:
@@ -1679,7 +1582,7 @@ index 99d0900..0925557 100644
        case UnitType.HydrogenBomb: {
          const count = this.amount ?? 1;
          for (let i = 0; i < count; i++) {
-@@ -139,6 +145,9 @@ export class ConstructionExecution implements Execution {
+@@ -139,6 +144,9 @@ export class ConstructionExecution implements Execution {
        case UnitType.MIRV:
          this.mg.addExecution(new MirvExecution(player, this.tile));
          break;
@@ -1689,18 +1592,20 @@ index 99d0900..0925557 100644
        case UnitType.Warship:
          this.mg.addExecution(
            new WarshipExecution({ owner: player, patrolTile: this.tile }),
-@@ -164,6 +173,18 @@ export class ConstructionExecution implements Execution {
+@@ -164,6 +172,20 @@ export class ConstructionExecution implements Execution {
        case UnitType.Factory:
          this.mg.addExecution(new FactoryExecution(this.structure!));
          break;
-+      case UnitType.AATurret:
-+        this.mg.addExecution(new AATurretExecution(this.structure!));
-+        break;
 +      case UnitType.CivilAirport:
 +        this.mg.addExecution(new CivilAirportExecution(this.structure!));
 +        break;
 +      case UnitType.Airfield:
 +        this.mg.addExecution(new AirfieldExecution(this.structure!));
++        break;
++      case UnitType.Metropolis:
++      case UnitType.Town:
++        // 가만히 인구만 늘려 주는 건물: 아무것도 하지 않는 실행을 재사용
++        this.mg.addExecution(new BunkerExecution(this.structure!));
 +        break;
 +      case UnitType.Bunker:
 +        this.mg.addExecution(new BunkerExecution(this.structure!));
@@ -1708,13 +1613,14 @@ index 99d0900..0925557 100644
        default:
          console.warn(
            `unit type ${this.constructionType} cannot be constructed`,
-@@ -180,6 +201,10 @@ export class ConstructionExecution implements Execution {
+@@ -180,6 +202,11 @@ export class ConstructionExecution implements Execution {
        case UnitType.SAMLauncher:
        case UnitType.City:
        case UnitType.Factory:
 +      case UnitType.Bunker:
++      case UnitType.Metropolis:
++      case UnitType.Town:
 +      case UnitType.Airfield:
-+      case UnitType.AATurret:
 +      case UnitType.CivilAirport:
          return true;
        default:
@@ -2482,10 +2388,10 @@ index 0000000..a1b86f2
 +});
 diff --git a/packages/engine/src/execution/nation/NationModBehavior.ts b/packages/engine/src/execution/nation/NationModBehavior.ts
 new file mode 100644
-index 0000000..8c1f039
+index 0000000..103103c
 --- /dev/null
 +++ b/packages/engine/src/execution/nation/NationModBehavior.ts
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,261 @@
 +import { TileRef } from "@openfront/engine-api/game/GameMap";
 +import { UnitType } from "@openfront/engine-api/game/GameTypes";
 +import {
@@ -2496,9 +2402,7 @@ index 0000000..8c1f039
 +  slotKey,
 +} from "@openfront/engine-api/game/ModCatalog";
 +import { Game, Player } from "../../game/Game";
-+import { AA_TURRET_RANGE, aaTurretRange } from "../AATurretExecution";
-+import { FIGHTERS_PER_AIRFIELD } from "../AirfieldExecution";
-+import { AirliftExecution } from "../AirliftExecution";
++import { AIRBORNE_COST, AirliftExecution } from "../AirliftExecution";
 +import { ConstructionExecution } from "../ConstructionExecution";
 +import { ModEquipExecution } from "../ModEquipExecution";
 +import { ModUpgradeExecution } from "../ModUpgradeExecution";
@@ -2517,6 +2421,9 @@ index 0000000..8c1f039
 +    i.key === "nuke_cheap",
 +).map((i) => i.key);
 +
++/** 전쟁 중 국가 AI가 보유하는 탱크 수 (탱크는 빨리 대량 생산된다) */
++const TANK_LIMIT = 6;
++
 +/** AI가 좋아하는 폭탄 변형 (슬롯별 우선순위, 앞이 먼저) */
 +const BOMB_PREFERENCE: Record<BombSlot, string[]> = {
 +  abomb: ["bomb_thermobaric", "bomb_cluster", "bomb_tactical"],
@@ -2526,7 +2433,7 @@ index 0000000..8c1f039
 +
 +/**
 + * 모드 기능을 국가 AI가 쓰게 하는 행동:
-+ * 업그레이드/무기/탱크 연구, 폭탄 연구와 슬롯 장착, 민간 공항·벙커·대공 터렛·탱크 건설.
++ * 업그레이드/무기/탱크 연구, 폭탄 연구와 슬롯 장착, 민간 공항·스카이포트·벙커·탱크 건설.
 + * 상태를 따로 저장하지 않는다 (매번 게임 상태만 보고 정한다).
 + */
 +export class NationModBehavior {
@@ -2598,22 +2505,22 @@ index 0000000..8c1f039
 +  }
 +
 +  /**
-+   * 전투기 강습: 스카이포트에 전투기가 있으면 적극적으로 적의 땅에 병사를 내려 침략한다.
++   * 에어본 침략: 스카이포트가 있으면 적극적으로 적의 땅에 병사를 내려 침략한다.
 +   * - 전쟁 중인 상대를 우선, 없으면 가장 병력이 약한 상대를 노린다.
 +   * - 내 스카이포트에서 가장 가까운 적 국경 타일을 고른다.
-+   * - 쿨타임이 끝난 적 대공 터렛이 지키는 곳은 피한다 (전투기가 가득 찼을 때는 무시하고 밀어붙인다).
++   * - 동시에 병사를 태운 비행기는 최대 3대까지 띄운다.
 +   */
 +  private airlift(): void {
 +    const me = this.player;
 +    const airfields = me
 +      .units(UnitType.Airfield)
 +      .filter((u) => u.isActive() && !u.isUnderConstruction());
-+    const fighters = airfields.reduce((n, u) => n + u.troops(), 0);
-+    if (fighters <= 0) return;
++    if (airfields.length === 0) return;
++    if (me.gold() < AIRBORNE_COST + RESERVE) return;
 +    if (me.troops() < 20_000) return;
-+    const stockFull = airfields.every(
-+      (u) => u.troops() >= FIGHTERS_PER_AIRFIELD * u.level(),
-+    );
++    if (me.units(UnitType.Airborne).filter((u) => u.troops() > 0).length >= 3) {
++      return;
++    }
 +
 +    // 공격 대상: 전쟁 중인 상대 우선, 없으면 가장 약한 상대
 +    const atWar = new Set<Player>();
@@ -2646,17 +2553,6 @@ index 0000000..8c1f039
 +    for (const tile of victim.borderTiles()) {
 +      if (++scanned > 300) break;
 +      if (!this.mg.isLand(tile)) continue;
-+      const guarded = this.mg
-+        .nearbyUnits(tile, AA_TURRET_RANGE + 15 * 9, [UnitType.AATurret])
-+        .some(
-+          ({ unit, distSquared }) =>
-+            unit.owner() !== me &&
-+            unit.isActive() &&
-+            !unit.isUnderConstruction() &&
-+            !unit.isInCooldown() &&
-+            distSquared <= aaTurretRange(unit.level()) ** 2,
-+        );
-+      if (guarded && !stockFull) continue;
 +      for (const a of airfields) {
 +        const d = this.mg.euclideanDistSquared(a.tile(), tile);
 +        if (d < bestD) {
@@ -2682,6 +2578,21 @@ index 0000000..8c1f039
 +    const cost = (t: UnitType) =>
 +      this.mg.unitInfo(t).cost(this.mg, this.player);
 +
++    // 0) 인구: 마을(싸고 작음)과 대도시(비싸고 인구 4배)
++    if (
++      this.count(UnitType.Town) < 4 &&
++      gold >= cost(UnitType.Town) * 3n &&
++      this.place(UnitType.Town)
++    ) {
++      return;
++    }
++    if (
++      this.count(UnitType.Metropolis) < 2 &&
++      gold >= cost(UnitType.Metropolis) * 2n &&
++      this.place(UnitType.Metropolis)
++    ) {
++      return;
++    }
 +    // 1) 민간 공항 (돈 버는 건물): 최대 3개
 +    if (
 +      this.count(UnitType.CivilAirport) < 3 &&
@@ -2689,25 +2600,19 @@ index 0000000..8c1f039
 +    ) {
 +      if (this.place(UnitType.CivilAirport)) return;
 +    }
-+    // 2) 스카이포트와 대공 터렛, 벙커: 각 1개
++    // 2) 스카이포트와 벙커: 각 1개
 +    if (
 +      this.count(UnitType.Airfield) < 1 &&
 +      gold >= cost(UnitType.Airfield) * 3n
 +    ) {
 +      if (this.place(UnitType.Airfield)) return;
 +    }
-+    if (
-+      this.count(UnitType.AATurret) < 1 &&
-+      gold >= cost(UnitType.AATurret) * 3n
-+    ) {
-+      if (this.place(UnitType.AATurret)) return;
-+    }
 +    if (this.count(UnitType.Bunker) < 1 && gold >= cost(UnitType.Bunker) * 2n) {
 +      if (this.place(UnitType.Bunker)) return;
 +    }
 +    // 3) 전쟁 중이면 탱크 (최대 2대)
 +    if (
-+      this.count(UnitType.Tank) < 2 &&
++      this.count(UnitType.Tank) < TANK_LIMIT &&
 +      this.player.outgoingAttacks().length > 0 &&
 +      gold >= cost(UnitType.Tank) * 2n
 +    ) {
@@ -2722,7 +2627,7 @@ index 0000000..8c1f039
 +    const map = this.mg;
 +    const ax = map.x(anchor);
 +    const ay = map.y(anchor);
-+    for (let r = 2; r <= 14; r += 2) {
++    for (let r = 2; r <= 24; r += 2) {
 +      for (let dy = -r; dy <= r; dy += 2) {
 +        for (let dx = -r; dx <= r; dx += 2) {
 +          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
@@ -2749,7 +2654,7 @@ index 0000000..8c1f039
 +  }
 +}
 diff --git a/packages/engine/src/game/Game.ts b/packages/engine/src/game/Game.ts
-index 577eb2a..03ad38c 100644
+index 577eb2a..6982074 100644
 --- a/packages/engine/src/game/Game.ts
 +++ b/packages/engine/src/game/Game.ts
 @@ -80,6 +80,11 @@ export interface UnitParamsMap {
@@ -2764,7 +2669,7 @@ index 577eb2a..03ad38c 100644
    [UnitType.HydrogenBomb]: {
      targetTile?: number;
      trajectory: TileRef[];
-@@ -112,6 +117,21 @@ export interface UnitParamsMap {
+@@ -112,6 +117,24 @@ export interface UnitParamsMap {
  
    [UnitType.DefensePost]: Record<string, never>;
  
@@ -2772,7 +2677,6 @@ index 577eb2a..03ad38c 100644
 +
 +  [UnitType.Airfield]: Record<string, never>;
 +
-+  [UnitType.AATurret]: Record<string, never>;
 +
 +  [UnitType.Tank]: Record<string, never>;
 +
@@ -2783,10 +2687,14 @@ index 577eb2a..03ad38c 100644
 +
 +  [UnitType.Airborne]: { troops: number };
 +
++  [UnitType.Metropolis]: Record<string, never>;
++
++  [UnitType.Town]: Record<string, never>;
++
    [UnitType.SAMLauncher]: Record<string, never>;
  
    [UnitType.City]: Record<string, never>;
-@@ -494,6 +514,11 @@ export interface Player extends PlayerLike {
+@@ -494,6 +517,11 @@ export interface Player extends PlayerLike {
      sourceTile: TileRef | null,
      border: Set<number>,
    ): Attack;
@@ -2798,7 +2706,7 @@ index 577eb2a..03ad38c 100644
    outgoingAttacks(): Attack[];
    incomingAttacks(): Attack[];
    orderRetreat(attackID: string): void;
-@@ -660,6 +685,10 @@ export interface Game extends GameLike {
+@@ -660,6 +688,10 @@ export interface Game extends GameLike {
    structureVersion(): number;
    /** MIRVs launched so far by anyone; each one raises the next one's price. */
    mirvsLaunched(): number;
@@ -2897,7 +2805,7 @@ index 45d81ff..b5d086b 100644
      "outgoingAllianceRequests",
      stringArrayEqual(
 diff --git a/packages/engine/src/game/PlayerImpl.ts b/packages/engine/src/game/PlayerImpl.ts
-index 3704dff..8f1d25a 100644
+index 3704dff..0c03dfd 100644
 --- a/packages/engine/src/game/PlayerImpl.ts
 +++ b/packages/engine/src/game/PlayerImpl.ts
 @@ -1,3 +1,8 @@
@@ -2963,7 +2871,7 @@ index 3704dff..8f1d25a 100644
        case UnitType.HydrogenBomb:
          return this.nukeSpawn(targetTile, unitType);
        case UnitType.MIRVWarhead:
-@@ -1625,11 +1656,24 @@ export class PlayerImpl implements Player {
+@@ -1625,11 +1656,25 @@ export class PlayerImpl implements Player {
          return this.tradeShipSpawn(targetTile);
        case UnitType.Train:
          return this.landBasedUnitSpawn(targetTile);
@@ -2983,12 +2891,13 @@ index 3704dff..8f1d25a 100644
        case UnitType.Factory:
 +      case UnitType.Bunker:
 +      case UnitType.Airfield:
-+      case UnitType.AATurret:
 +      case UnitType.CivilAirport:
++      case UnitType.Metropolis:
++      case UnitType.Town:
          return this.landBasedStructureSpawn(targetTile, validTiles);
        default:
          assertNever(unitType);
-@@ -2034,6 +2078,7 @@ export class PlayerImpl implements Player {
+@@ -2034,6 +2079,7 @@ export class PlayerImpl implements Player {
        numUnitsConstructed: Object.entries(this.numUnitsConstructed).map(
          ([type, n]) => [type as UnitType, n],
        ),
@@ -2996,7 +2905,7 @@ index 3704dff..8f1d25a 100644
      };
    }
  
-@@ -2107,6 +2152,7 @@ export class PlayerImpl implements Player {
+@@ -2107,6 +2153,7 @@ export class PlayerImpl implements Player {
          }
        : (box as null);
      this.numUnitsConstructed = Object.fromEntries(s.numUnitsConstructed);
@@ -3004,7 +2913,7 @@ index 3704dff..8f1d25a 100644
      this.nearbyMemo = null;
    }
  }
-@@ -2177,6 +2223,8 @@ export const PlayerSnapshot = snapshotType({
+@@ -2177,6 +2224,8 @@ export const PlayerSnapshot = snapshotType({
        .nullable()
        .optional(),
      numUnitsConstructed: z.array(z.tuple([UnitTypeSchema, zInt()])),
@@ -3014,60 +2923,53 @@ index 3704dff..8f1d25a 100644
  });
  export type PlayerState = z.infer<typeof PlayerSnapshot.schema>;
 diff --git a/packages/engine/src/game/UnitImpl.ts b/packages/engine/src/game/UnitImpl.ts
-index 20d9b33..0b62d31 100644
+index 20d9b33..8132076 100644
 --- a/packages/engine/src/game/UnitImpl.ts
 +++ b/packages/engine/src/game/UnitImpl.ts
-@@ -123,6 +123,11 @@ export class UnitImpl implements Unit {
+@@ -123,6 +123,12 @@ export class UnitImpl implements Unit {
        case UnitType.SAMLauncher:
        case UnitType.City:
        case UnitType.Factory:
 +      case UnitType.Bunker:
 +      case UnitType.Airfield:
-+      case UnitType.AATurret:
 +      case UnitType.Tank:
 +      case UnitType.CivilAirport:
++      case UnitType.Metropolis:
++      case UnitType.Town:
          this.mg.stats().unitBuild(_owner, this._type);
      }
    }
-@@ -257,6 +262,11 @@ export class UnitImpl implements Unit {
+@@ -257,6 +263,12 @@ export class UnitImpl implements Unit {
        case UnitType.SAMLauncher:
        case UnitType.City:
        case UnitType.Factory:
 +      case UnitType.Bunker:
 +      case UnitType.Airfield:
-+      case UnitType.AATurret:
 +      case UnitType.Tank:
 +      case UnitType.CivilAirport:
++      case UnitType.Metropolis:
++      case UnitType.Town:
          this.mg.stats().unitCapture(newOwner, this._type);
          this.mg.stats().unitLose(this._owner, this._type);
          break;
-@@ -390,6 +400,21 @@ export class UnitImpl implements Unit {
+@@ -390,6 +402,12 @@ export class UnitImpl implements Unit {
          case UnitType.SAMLauncher:
          case UnitType.Warship:
          case UnitType.Factory:
 +        case UnitType.Bunker:
 +        case UnitType.Airfield:
-+        case UnitType.AATurret:
 +        case UnitType.Tank:
 +        case UnitType.CivilAirport:
-+      case UnitType.CivilAirport:
-+      case UnitType.Tank:
-+      case UnitType.CivilAirport:
-+      case UnitType.AATurret:
-+      case UnitType.Tank:
-+      case UnitType.CivilAirport:
-+      case UnitType.Airfield:
-+      case UnitType.AATurret:
-+      case UnitType.Tank:
-+      case UnitType.CivilAirport:
++        case UnitType.Metropolis:
++        case UnitType.Town:
            this.mg.stats().unitDestroy(destroyer, this._type);
            this.mg.stats().unitLose(this.owner(), this._type);
            break;
 diff --git a/packages/engine/src/snapshot/ExecutionRegistry.ts b/packages/engine/src/snapshot/ExecutionRegistry.ts
-index aab89b2..ac075a4 100644
+index aab89b2..ea43981 100644
 --- a/packages/engine/src/snapshot/ExecutionRegistry.ts
 +++ b/packages/engine/src/snapshot/ExecutionRegistry.ts
-@@ -15,6 +15,15 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
+@@ -15,6 +15,14 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
  import { EmbargoAllExecutionSnapshot } from "../execution/EmbargoAllExecution";
  import { EmbargoExecutionSnapshot } from "../execution/EmbargoExecution";
  import { EmojiExecutionSnapshot } from "../execution/EmojiExecution";
@@ -3077,19 +2979,17 @@ index aab89b2..ac075a4 100644
 +import { ModUpgradeExecutionSnapshot } from "../execution/ModUpgradeExecution";
 +import { CivilAirportExecutionSnapshot } from "../execution/CivilAirportExecution";
 +import { BioZoneExecutionSnapshot } from "../execution/BioZoneExecution";
-+import { AATurretExecutionSnapshot } from "../execution/AATurretExecution";
 +import { AirfieldExecutionSnapshot } from "../execution/AirfieldExecution";
 +import { BunkerExecutionSnapshot } from "../execution/BunkerExecution";
  import { FactoryExecutionSnapshot } from "../execution/FactoryExecution";
  import { MarkDisconnectedExecutionSnapshot } from "../execution/MarkDisconnectedExecution";
  import { MirvExecutionSnapshot } from "../execution/MIRVExecution";
-@@ -70,6 +79,15 @@ export const EXECUTION_SNAPSHOT_TYPES = [
+@@ -70,6 +78,14 @@ export const EXECUTION_SNAPSHOT_TYPES = [
    EmbargoExecutionSnapshot,
    EmojiExecutionSnapshot,
    FactoryExecutionSnapshot,
 +  BunkerExecutionSnapshot,
 +  AirfieldExecutionSnapshot,
-+  AATurretExecutionSnapshot,
 +  BioZoneExecutionSnapshot,
 +  CivilAirportExecutionSnapshot,
 +  ModUpgradeExecutionSnapshot,
@@ -3100,172 +3000,198 @@ index aab89b2..ac075a4 100644
    MirvExecutionSnapshot,
    MissileSiloExecutionSnapshot,
 diff --git a/resources/atlases/icon-atlas.png b/resources/atlases/icon-atlas.png
-index eda0253c13d087a25ae68f226c7e1b645b99290e..cbd7785c7777bcbaa4a56ae9c17ab1e67275759a 100644
+index eda0253c13d087a25ae68f226c7e1b645b99290e..81708600993b6f195b4a8fafa9f5b015228741c6 100644
 GIT binary patch
-literal 8541
-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
+literal 9910
+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
 
 literal 3295
 zcmai%c{J4BAIHBljAaH{vo8@6$x;$o!Z7x|kg+qQL?}b?o#(MkhU!7~E&KKivJWyv
@@ -3364,13 +3290,6 @@ zZH^MMvfW!tN{OB0X{`^>3DJ);{-mP*+QUZob_92EGbIj;UbS6-3+>H8qesuNwH&U5
 zjoO#vDP-l5Dwl=>E)87RxFwBp7tHP?boR*UWq%L0-i?%#zlly*7O9m+qz)&*{V9C%
 hPlHILq*ix?z5%(ZI9}wl%jp0B002ovPDHLkV1i1X^3ebQ
 
-diff --git a/resources/images/AATurretIconWhite.svg b/resources/images/AATurretIconWhite.svg
-new file mode 100644
-index 0000000..b91b34b
---- /dev/null
-+++ b/resources/images/AATurretIconWhite.svg
-@@ -0,0 +1 @@
-+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><g fill="#fff"><polygon points="10.0,56.0 16.0,44.0 48.0,44.0 54.0,56.0"/><ellipse cx="32.0" cy="42.0" rx="12.0" ry="8.0"/><polygon points="22.0,38.0 14.0,10.0 20.0,8.0 28.0,36.0"/><polygon points="36.0,36.0 44.0,8.0 50.0,10.0 42.0,38.0"/></g></svg>
 diff --git a/resources/images/AirborneIconWhite.svg b/resources/images/AirborneIconWhite.svg
 new file mode 100644
 index 0000000..c1b193e
@@ -3413,6 +3332,13 @@ index 0000000..5bf6279
 +++ b/resources/images/FighterIconWhite.svg
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><rect x="30" y="10" width="4" height="10"/></g></mask><g fill="#fff" mask="url(#m)"><polygon points="32.0,4.0 36.0,18.0 36.0,26.0 58.0,46.0 58.0,52.0 36.0,46.0 35.0,56.0 40.0,60.0 24.0,60.0 29.0,56.0 28.0,46.0 6.0,52.0 6.0,46.0 28.0,26.0 28.0,18.0"/></g></svg>
+diff --git a/resources/images/MetropolisIconWhite.svg b/resources/images/MetropolisIconWhite.svg
+new file mode 100644
+index 0000000..2c6fc38
+--- /dev/null
++++ b/resources/images/MetropolisIconWhite.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><rect x="10" y="34" width="3" height="4"/><rect x="14" y="34" width="3" height="4"/><rect x="10" y="42" width="3" height="4"/><rect x="14" y="42" width="3" height="4"/><rect x="26" y="18" width="4" height="5"/><rect x="32" y="18" width="4" height="5"/><rect x="26" y="28" width="4" height="5"/><rect x="32" y="28" width="4" height="5"/><rect x="26" y="38" width="4" height="5"/><rect x="32" y="38" width="4" height="5"/><rect x="46" y="28" width="4" height="5"/><rect x="52" y="28" width="4" height="5"/><rect x="46" y="38" width="4" height="5"/><rect x="52" y="38" width="4" height="5"/></g></mask><g fill="#fff" mask="url(#m)"><rect x="6" y="30" width="14" height="28"/><rect x="22" y="12" width="18" height="46"/><rect x="42" y="24" width="16" height="34"/><rect x="30" y="4" width="2" height="10"/><rect x="2" y="56" width="60" height="4"/></g></svg>
 diff --git a/resources/images/SkyportIconWhite.svg b/resources/images/SkyportIconWhite.svg
 new file mode 100644
 index 0000000..928f7eb
@@ -3427,6 +3353,13 @@ index 0000000..ad793a4
 +++ b/resources/images/TankIconWhite.svg
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><ellipse cx="16.0" cy="47.0" rx="4.0" ry="4.0"/><ellipse cx="32.0" cy="47.0" rx="4.0" ry="4.0"/><ellipse cx="48.0" cy="47.0" rx="4.0" ry="4.0"/></g></mask><g fill="#fff" mask="url(#m)"><rect x="6" y="38" width="52" height="16" rx="8"/><rect x="14" y="26" width="34" height="14" rx="4"/><rect x="22" y="16" width="20" height="12" rx="4"/><rect x="40" y="19" width="22" height="5"/></g></svg>
+diff --git a/resources/images/TownIconWhite.svg b/resources/images/TownIconWhite.svg
+new file mode 100644
+index 0000000..c4dc4e3
+--- /dev/null
++++ b/resources/images/TownIconWhite.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><rect x="15" y="42" width="9" height="14"/><rect x="42" y="46" width="8" height="6"/></g></mask><g fill="#fff" mask="url(#m)"><polygon points="4.0,34.0 20.0,18.0 36.0,34.0"/><rect x="8" y="34" width="24" height="22"/><polygon points="34.0,40.0 46.0,28.0 58.0,40.0"/><rect x="37" y="40" width="18" height="16"/><rect x="2" y="56" width="60" height="4"/></g></svg>
 diff --git a/resources/images/UpgradeIconWhite.svg b/resources/images/UpgradeIconWhite.svg
 new file mode 100644
 index 0000000..cb1c0d0
@@ -3435,15 +3368,14 @@ index 0000000..cb1c0d0
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><g fill="#fff"><polygon points="32.0,6.0 52.0,28.0 40.0,28.0 40.0,46.0 24.0,46.0 24.0,28.0 12.0,28.0"/><rect x="14" y="52" width="36" height="6"/></g></svg>
 diff --git a/resources/lang/en.json b/resources/lang/en.json
-index b0eca7f..7792210 100644
+index b0eca7f..aecc59a 100644
 --- a/resources/lang/en.json
 +++ b/resources/lang/en.json
-@@ -205,8 +205,13 @@
+@@ -205,15 +205,22 @@
    },
    "build_menu": {
      "desc": {
-+      "aa_turret": "Shoots down enemy fighters (13s cooldown); upgrades extend range and shorten cooldown",
-+      "airfield": "Holds fighters (2 per level, +1 every 60s). Fighters fly out to land troops on enemy ground: tap enemy land and use Fighter Strike",
++      "airfield": "Holds fighters (2 per level), builds 1 every 60s; unlocks Airborne",
        "atom_bomb": "Small explosion",
 +      "bunker": "Reduces troop losses from bombing by 50%",
 +      "bunker_buster": "Destroys all bunkers in a small radius",
@@ -3452,15 +3384,17 @@ index b0eca7f..7792210 100644
        "defense_post": "Increases defenses of nearby borders",
        "factory": "Creates railroads and spawns trains",
        "hydrogen_bomb": "Large explosion",
-@@ -214,6 +219,7 @@
++      "metropolis": "Raises your max population like 4 cities. Upgradable",
+       "mirv": "Huge explosion, only targets selected player",
        "missile_silo": "Used to launch nukes",
        "port": "Sends trade ships to generate gold",
        "sam_launcher": "Defends against incoming nukes",
 +      "tank": "Moves to the front in wars; nearby attacks lose fewer troops and advance faster",
++      "town": "A cheap small settlement: adds about 2/3 of a city's population cap. Upgradable",
        "warship": "Captures trade ships, destroys ships and boats"
      },
      "not_enough_money": "Not enough money",
-@@ -2221,6 +2227,152 @@
+@@ -2221,6 +2228,152 @@
      "title_clanwars": "Clan Wars Ranked Matchmaking (ALPHA)",
      "waiting_for_game": "Waiting for game to start..."
    },
@@ -3472,8 +3406,8 @@ index b0eca7f..7792210 100644
 +    "equipped": "Equipped",
 +    "item": {
 +      "air_cap": {
-+        "desc": "Each level lets a fighter land more soldiers.",
-+        "name": "Fighter Capacity"
++        "desc": "Each level lets one Airborne sortie carry more soldiers.",
++        "name": "Airborne Capacity"
 +      },
 +      "bomb_bio": {
 +        "desc": "Medium blast with 3× troop kills. Buildings survive. The area stays contaminated for 90 seconds: retaking it costs 2× the troops and is slower. Fixed price 20M.",
@@ -3613,11 +3547,10 @@ index b0eca7f..7792210 100644
    "mode_selector": {
      "lobbies_unreachable": "Can't reach the public lobbies right now",
      "offline_lobbies": "Public lobbies aren't available while you're offline",
-@@ -3190,9 +3342,14 @@
+@@ -3190,16 +3343,23 @@
      "title": "Tutorial"
    },
    "unit_type": {
-+    "aa_turret": "AA Turret",
 +    "airfield": "Skyport",
      "atom_bomb": "Atom Bomb",
      "boat": "Boat",
@@ -3628,34 +3561,37 @@ index b0eca7f..7792210 100644
      "defense_post": "Defense Post",
      "factory": "Factory",
      "hydrogen_bomb": "Hydrogen Bomb",
-@@ -3200,6 +3357,7 @@
++    "metropolis": "Metropolis",
+     "mirv": "MIRV",
      "missile_silo": "Missile Silo",
      "port": "Port",
      "sam_launcher": "SAM Launcher",
 +    "tank": "Tank",
++    "town": "Town",
      "warship": "Warship"
    },
    "update_available": {
 diff --git a/resources/lang/ko.json b/resources/lang/ko.json
-index 4ad2d5a..7fa9db6 100644
+index 4ad2d5a..4614dd0 100644
 --- a/resources/lang/ko.json
 +++ b/resources/lang/ko.json
-@@ -183,7 +183,13 @@
+@@ -183,7 +183,14 @@
        "missile_silo": "핵 미사일 발사를 위해 사용됩니다",
        "port": "무역선을 보내 금을 생산합니다",
        "sam_launcher": "들어오는 핵미사일을 방어합니다",
 -      "warship": "무역선을 나포하고, 수송선과 함선을 파괴합니다"
 +      "warship": "무역선을 나포하고, 수송선과 함선을 파괴합니다",
 +      "bunker": "폭격으로 인한 병력 손실을 50% 줄여줘요",
-+      "airfield": "전투기를 보관(레벨당 2대)하고 60초마다 1대 생산해요. 전투기는 적 땅에 병사를 내려 침략해요: 적 땅을 눌러서 '전투기 강습'을 쓰세요",
-+      "aa_turret": "적 전투기를 격추해요 (쿨타임 13초). 업그레이드하면 범위가 넓어지고 쿨타임이 줄어요",
++      "airfield": "전투기를 보관(레벨당 2대)하고 60초마다 1대 생산. 에어본을 쓰려면 필요해요",
 +      "bunker_buster": "작은 범위의 벙커를 모두 철거해요",
 +      "tank": "전쟁이 나면 전선으로 이동해요. 근처 전투에서 병력 손실이 줄고 더 빨리 전진해요",
-+      "civil_airport": "10초마다 비행기 무역으로 돈을 벌어요. 다른 나라 공항이 있으면 더 벌어요. 업그레이드 가능"
++      "civil_airport": "10초마다 비행기 무역으로 돈을 벌어요. 다른 나라 공항이 있으면 더 벌어요. 업그레이드 가능",
++      "metropolis": "도시 4개만큼 인구 한도를 올려줘요. 업그레이드 가능",
++      "town": "값싼 작은 정착지예요. 도시의 약 2/3만큼 인구 한도를 올려줘요. 업그레이드 가능"
      },
      "not_enough_money": "돈이 부족합니다",
      "upgrade_amount": "x{amount}",
-@@ -1839,6 +1845,152 @@
+@@ -1839,6 +1846,152 @@
      "delete_unit_title": "유닛 삭제",
      "upgrade_x": "업그레이드 x{amount}"
    },
@@ -3736,8 +3672,8 @@ index 4ad2d5a..7fa9db6 100644
 +        "desc": "단계마다 탱크가 좋아져요. 근처 전투에서 병력 손실이 더 줄고 더 빨리 전진해요."
 +      },
 +      "air_cap": {
-+        "name": "전투기 적재량",
-+        "desc": "단계마다 전투기 한 대가 내리는 병사가 늘어나요."
++        "name": "에어본 적재량",
++        "desc": "단계마다 에어본이 한 번에 더 많은 병사를 실어요."
 +      },
 +      "bomb_cluster": {
 +        "name": "클러스터탄",
@@ -3808,7 +3744,7 @@ index 4ad2d5a..7fa9db6 100644
    "relation": {
      "default": "기본",
      "distrustful": "신뢰하지 않음",
-@@ -2196,7 +2348,13 @@
+@@ -2196,7 +2349,14 @@
      "missile_silo": "미사일 발사대",
      "port": "항구",
      "sam_launcher": "지대공 미사일 발사대",
@@ -3816,10 +3752,11 @@ index 4ad2d5a..7fa9db6 100644
 +    "warship": "군함",
 +    "bunker": "벙커",
 +    "airfield": "스카이포트",
-+    "aa_turret": "대공 터렛",
 +    "bunker_buster": "벙커 부스터",
 +    "tank": "탱크",
-+    "civil_airport": "민간 공항"
++    "civil_airport": "민간 공항",
++    "metropolis": "대도시",
++    "town": "마을"
    },
    "update_available": {
      "desktop": "OpenFront의 새로운 버전을 이용할 수 있습니다. 백그라운드에서 다운로드되며, 준비가 완료되면 업데이트 표시줄에서 새로고침하세요.",
@@ -3927,31 +3864,33 @@ index af06ea3..7790d59 100644
      buildCity: "Digit1",
      buildFactory: "Digit2",
 diff --git a/src/client/components/baseComponents/stats/PlayerStatsTable.ts b/src/client/components/baseComponents/stats/PlayerStatsTable.ts
-index 728a699..5c9efef 100644
+index 728a699..e181010 100644
 --- a/src/client/components/baseComponents/stats/PlayerStatsTable.ts
 +++ b/src/client/components/baseComponents/stats/PlayerStatsTable.ts
-@@ -21,6 +21,11 @@ const BUILDING_ORDER = {
+@@ -21,6 +21,12 @@ const BUILDING_ORDER = {
    defp: 4,
    silo: 5,
    saml: 6,
 +  bunk: 7,
 +  airf: 8,
-+  aatr: 9,
 +  tank: 10,
 +  capt: 11,
++  metr: 12,
++  town: 13,
  } as const satisfies Record<
    Exclude<(typeof otherUnits)[number], "wshp">,
    number
-@@ -47,6 +52,12 @@ const UNIT_LABEL_KEYS = {
+@@ -47,6 +53,13 @@ const UNIT_LABEL_KEYS = {
    hbomb: "unit_type.hydrogen_bomb",
    mirv: "unit_type.mirv",
    mirvw: "player_stats_table.unit.mirvw",
 +  bunk: "unit_type.bunker",
 +  bbust: "unit_type.bunker_buster",
 +  airf: "unit_type.airfield",
-+  aatr: "unit_type.aa_turret",
 +  tank: "unit_type.tank",
 +  capt: "unit_type.civil_airport",
++  metr: "unit_type.metropolis",
++  town: "unit_type.town",
    trade: "player_stats_table.unit.trade",
    trans: "player_stats_table.unit.trans",
  } as const satisfies Record<
@@ -4045,24 +3984,25 @@ index c0fe900..8028834 100644
      playerPanel,
      headsUpMessage,
 diff --git a/src/client/hud/layers/BuildMenu.ts b/src/client/hud/layers/BuildMenu.ts
-index 617b33e..5c9021d 100644
+index 617b33e..2e17223 100644
 --- a/src/client/hud/layers/BuildMenu.ts
 +++ b/src/client/hud/layers/BuildMenu.ts
-@@ -29,6 +29,13 @@ import { GameView } from "../../view";
+@@ -29,6 +29,14 @@ import { GameView } from "../../view";
  const warshipIcon = assetUrl("images/BattleshipIconWhite.svg");
  const cityIcon = assetUrl("images/CityIconWhite.svg");
  const factoryIcon = assetUrl("images/FactoryIconWhite.svg");
 +// 모드 건물/유닛 전용 아이콘 (기존 건물과 모양이 겹치지 않게 따로 그림)
++const metropolisIcon = assetUrl("images/MetropolisIconWhite.svg");
++const townIcon = assetUrl("images/TownIconWhite.svg");
 +const bunkerIcon = assetUrl("images/BunkerIconWhite.svg");
 +const skyportIcon = assetUrl("images/SkyportIconWhite.svg");
-+const aaTurretIcon = assetUrl("images/AATurretIconWhite.svg");
 +const civilAirportIcon = assetUrl("images/CivilAirportIconWhite.svg");
 +const tankIcon = assetUrl("images/TankIconWhite.svg");
 +const bunkerBusterIcon = assetUrl("images/BunkerBusterIconWhite.svg");
  const goldCoinIcon = assetUrl("images/GoldCoinIcon.svg");
  const mirvIcon = assetUrl("images/MIRVIcon.svg");
  const missileSiloIcon = assetUrl("images/MissileSiloIconWhite.svg");
-@@ -55,6 +62,13 @@ const buildTable: BuildItemDisplay[][] = [
+@@ -55,6 +63,13 @@ const buildTable: BuildItemDisplay[][] = [
        key: "unit_type.atom_bomb",
        countable: false,
      },
@@ -4076,10 +4016,24 @@ index 617b33e..5c9021d 100644
      {
        unitType: UnitType.MIRV,
        icon: mirvIcon,
-@@ -104,6 +118,41 @@ const buildTable: BuildItemDisplay[][] = [
+@@ -104,6 +119,48 @@ const buildTable: BuildItemDisplay[][] = [
        key: "unit_type.defense_post",
        countable: true,
      },
++    {
++      unitType: UnitType.Metropolis,
++      icon: metropolisIcon,
++      description: "build_menu.desc.metropolis",
++      key: "unit_type.metropolis",
++      countable: true,
++    },
++    {
++      unitType: UnitType.Town,
++      icon: townIcon,
++      description: "build_menu.desc.town",
++      key: "unit_type.town",
++      countable: true,
++    },
 +    {
 +      unitType: UnitType.CivilAirport,
 +      icon: civilAirportIcon,
@@ -4092,13 +4046,6 @@ index 617b33e..5c9021d 100644
 +      icon: tankIcon,
 +      description: "build_menu.desc.tank",
 +      key: "unit_type.tank",
-+      countable: true,
-+    },
-+    {
-+      unitType: UnitType.AATurret,
-+      icon: aaTurretIcon,
-+      description: "build_menu.desc.aa_turret",
-+      key: "unit_type.aa_turret",
 +      countable: true,
 +    },
 +    {
@@ -4120,7 +4067,7 @@ index 617b33e..5c9021d 100644
        icon: cityIcon,
 diff --git a/src/client/hud/layers/ModPanel.ts b/src/client/hud/layers/ModPanel.ts
 new file mode 100644
-index 0000000..c71b2b7
+index 0000000..5f5ee9b
 --- /dev/null
 +++ b/src/client/hud/layers/ModPanel.ts
 @@ -0,0 +1,401 @@
@@ -4168,7 +4115,7 @@ index 0000000..c71b2b7
 +  biochem: assetUrl("images/BiochemIconWhite.svg"),
 +  buster: assetUrl("images/BunkerBusterIconWhite.svg"),
 +  tank: assetUrl("images/TankIconWhite.svg"),
-+  fighter: assetUrl("images/FighterIconWhite.svg"),
++  airborne: assetUrl("images/AirborneIconWhite.svg"),
 +  upgrade: assetUrl("images/UpgradeIconWhite.svg"),
 +};
 +
@@ -4358,7 +4305,7 @@ index 0000000..c71b2b7
 +      `Lv ${air}/${airItem.maxLevel} · ${airCapacity(air).toLocaleString()}`,
 +      html`${this.desc("air_cap")}${this.pips(air, airItem.maxLevel)}`,
 +      this.buyButton(airItem),
-+      ICON.fighter,
++      ICON.airborne,
 +    )}`;
 +  }
 +
@@ -4554,14 +4501,14 @@ index d8ef5a2..11dca79 100644
      player: PlayerView,
      tile: TileRef,
 diff --git a/src/client/hud/layers/RadialMenuElements.ts b/src/client/hud/layers/RadialMenuElements.ts
-index 37e5838..d044153 100644
+index 37e5838..b740f29 100644
 --- a/src/client/hud/layers/RadialMenuElements.ts
 +++ b/src/client/hud/layers/RadialMenuElements.ts
 @@ -32,6 +32,7 @@ import {
    SendUpgradeStructureIntentEvent,
  } from "../../Transport";
  const allianceIcon = assetUrl("images/AllianceIconWhite.svg");
-+const fighterIcon = assetUrl("images/FighterIconWhite.svg");
++const airborneIcon = assetUrl("images/AirborneIconWhite.svg");
  const boatIcon = assetUrl("images/BoatIconWhite.svg");
  const buildIcon = assetUrl("images/BuildIconWhite.svg");
  const chatIcon = assetUrl("images/ChatIconWhite.svg");
@@ -4585,14 +4532,14 @@ index 37e5838..d044153 100644
    },
  };
  
-+// 전투기 강습: 전투기가 남아 있는 스카이포트가 있어야 쓸 수 있다 (전투기 1대와 병사를 소모)
++// 에어본(병사 수송기): 스카이포트가 있어야 사용 가능, 출격당 3M
 +const airliftMenuElement: MenuElement = {
 +  id: Slot.Airlift,
 +  name: "airlift",
 +  disabled: (params: MenuElementParams) =>
 +    !params.game.isLand(params.tile) ||
-+    !params.myPlayer.units(UnitType.Airfield).some((u) => u.troops() > 0), // troops = 보관 중인 전투기 수
-+  icon: fighterIcon,
++    params.myPlayer.totalUnitLevels(UnitType.Airfield) === 0,
++  icon: airborneIcon,
 +  color: COLORS.boat,
 +
 +  action: async (params: MenuElementParams) => {
@@ -4659,60 +4606,64 @@ index c78f574..07325c2 100644
      if (u.ownerID !== owner) continue;
      const t = u.targetTile;
 diff --git a/src/client/render/gl/passes/StructureLevelPass.ts b/src/client/render/gl/passes/StructureLevelPass.ts
-index 7d489c4..dc4d91e 100644
+index 7d489c4..c9d3a08 100644
 --- a/src/client/render/gl/passes/StructureLevelPass.ts
 +++ b/src/client/render/gl/passes/StructureLevelPass.ts
-@@ -16,6 +16,10 @@ import type { RendererConfig, UnitState } from "../../types";
+@@ -16,6 +16,11 @@ import type { RendererConfig, UnitState } from "../../types";
  import {
    STRUCTURE_TYPES,
    UT_CITY,
-+  UT_AA_TURRET,
 +  UT_AIRFIELD,
 +  UT_BUNKER,
 +  UT_CIVIL_AIRPORT,
++  UT_METROPOLIS,
++  UT_TOWN,
    UT_DEFENSE_POST,
    UT_FACTORY,
    UT_MISSILE_SILO,
-@@ -51,6 +55,10 @@ const STRUCTURE_ORDER = [
+@@ -51,6 +56,11 @@ const STRUCTURE_ORDER = [
    UT_DEFENSE_POST,
    UT_SAM_LAUNCHER,
    UT_MISSILE_SILO,
 +  UT_BUNKER,
 +  UT_AIRFIELD,
-+  UT_AA_TURRET,
 +  UT_CIVIL_AIRPORT,
++  UT_METROPOLIS,
++  UT_TOWN,
  ] as const;
  
  /** Max characters per level label (handles up to "99"). */
 diff --git a/src/client/render/gl/passes/StructurePass.ts b/src/client/render/gl/passes/StructurePass.ts
-index 6f0cb39..ed9028c 100644
+index 6f0cb39..4643b47 100644
 --- a/src/client/render/gl/passes/StructurePass.ts
 +++ b/src/client/render/gl/passes/StructurePass.ts
-@@ -16,7 +16,11 @@
+@@ -16,7 +16,12 @@
  
  import type { GhostPreviewData, RendererConfig, UnitState } from "../../types";
  import {
-+  UT_AA_TURRET,
 +  UT_AIRFIELD,
 +  UT_BUNKER,
    UT_CITY,
 +  UT_CIVIL_AIRPORT,
++  UT_METROPOLIS,
++  UT_TOWN,
    UT_DEFENSE_POST,
    UT_FACTORY,
    UT_MISSILE_SILO,
-@@ -53,6 +57,11 @@ const STRUCTURE_ORDER = [
+@@ -53,6 +58,12 @@ const STRUCTURE_ORDER = [
    UT_DEFENSE_POST,
    UT_SAM_LAUNCHER,
    UT_MISSILE_SILO,
 +  // 모드 구조물 (icon-atlas.png 6~9번째 칸)
 +  UT_BUNKER,
 +  UT_AIRFIELD,
-+  UT_AA_TURRET,
 +  UT_CIVIL_AIRPORT,
++  UT_METROPOLIS,
++  UT_TOWN,
  ] as const;
  
  const ATLAS_COLS = STRUCTURE_ORDER.length;
-@@ -115,7 +124,7 @@ export class StructurePass {
+@@ -115,7 +126,7 @@ export class StructurePass {
  
    private instanceCount = 0;
  
@@ -4744,7 +4695,7 @@ index 46ee415..1581154 100644
  
  const ATLAS_COLS = UNIT_ORDER.length;
 diff --git a/src/client/render/types/UnitType.ts b/src/client/render/types/UnitType.ts
-index edf1d80..80b20a0 100644
+index edf1d80..f409a23 100644
 --- a/src/client/render/types/UnitType.ts
 +++ b/src/client/render/types/UnitType.ts
 @@ -21,6 +21,8 @@ export const UT_SAM_MISSILE = "SAMMissile" as const;
@@ -4756,30 +4707,32 @@ index edf1d80..80b20a0 100644
  
  // Structures
  export const UT_CITY = "City" as const;
-@@ -29,6 +31,11 @@ export const UT_FACTORY = "Factory" as const;
+@@ -29,6 +31,12 @@ export const UT_FACTORY = "Factory" as const;
  export const UT_DEFENSE_POST = "Defense Post" as const;
  export const UT_SAM_LAUNCHER = "SAM Launcher" as const;
  export const UT_MISSILE_SILO = "Missile Silo" as const;
 +// 모드로 추가한 구조물
 +export const UT_BUNKER = "Bunker" as const;
 +export const UT_AIRFIELD = "Airfield" as const;
-+export const UT_AA_TURRET = "AA Turret" as const;
 +export const UT_CIVIL_AIRPORT = "Civil Airport" as const;
++export const UT_METROPOLIS = "Metropolis" as const;
++export const UT_TOWN = "Town" as const;
  
  // ---------------------------------------------------------------------------
  // Derived sets
-@@ -41,6 +48,10 @@ export const STRUCTURE_TYPES: ReadonlySet<string> = new Set([
+@@ -41,6 +49,11 @@ export const STRUCTURE_TYPES: ReadonlySet<string> = new Set([
    UT_DEFENSE_POST,
    UT_SAM_LAUNCHER,
    UT_MISSILE_SILO,
 +  UT_BUNKER,
 +  UT_AIRFIELD,
-+  UT_AA_TURRET,
 +  UT_CIVIL_AIRPORT,
++  UT_METROPOLIS,
++  UT_TOWN,
  ]);
  
  export const NUKE_TYPES: ReadonlySet<string> = new Set([
-@@ -62,6 +73,7 @@ export const SMOOTHED_NUKE_TYPES: ReadonlySet<string> = new Set([
+@@ -62,6 +75,7 @@ export const SMOOTHED_NUKE_TYPES: ReadonlySet<string> = new Set([
  /** Units that leave a trail on the map (TrailManager). */
  export const TRAIL_TYPES: ReadonlySet<string> = new Set([
    UT_TRANSPORT,
@@ -4787,22 +4740,23 @@ index edf1d80..80b20a0 100644
    UT_ATOM_BOMB,
    UT_HYDROGEN_BOMB,
    UT_MIRV,
-@@ -99,4 +111,10 @@ export const ALL_UNIT_TYPES = [
+@@ -99,4 +113,11 @@ export const ALL_UNIT_TYPES = [
    UT_SAM_LAUNCHER,
    UT_MISSILE_SILO,
    UT_TRAIN,
 +  UT_TANK,
 +  UT_BUNKER,
 +  UT_AIRFIELD,
-+  UT_AA_TURRET,
 +  UT_CIVIL_AIRPORT,
 +  UT_AIRBORNE,
++  UT_METROPOLIS,
++  UT_TOWN,
  ] as const;
 diff --git a/src/client/render/types/index.ts b/src/client/render/types/index.ts
-index fbf9e5b..25b0e09 100644
+index fbf9e5b..b3751ef 100644
 --- a/src/client/render/types/index.ts
 +++ b/src/client/render/types/index.ts
-@@ -54,6 +54,12 @@ export {
+@@ -54,6 +54,13 @@ export {
    UT_SHELL,
    UT_TRADE_SHIP,
    UT_TRAIN,
@@ -4810,8 +4764,9 @@ index fbf9e5b..25b0e09 100644
 +  UT_AIRBORNE,
 +  UT_BUNKER,
 +  UT_AIRFIELD,
-+  UT_AA_TURRET,
 +  UT_CIVIL_AIRPORT,
++  UT_METROPOLIS,
++  UT_TOWN,
    UT_TRANSPORT,
    UT_WARSHIP,
  } from "./UnitType";
@@ -4843,18 +4798,20 @@ index df43c93..0b81efa 100644
      // "Disable emojis" setting so live emojis stay hidden when it's off (#4430).
 diff --git a/tests/AirPowerMod.test.ts b/tests/AirPowerMod.test.ts
 new file mode 100644
-index 0000000..d36bd9c
+index 0000000..8406cf3
 --- /dev/null
 +++ b/tests/AirPowerMod.test.ts
-@@ -0,0 +1,1143 @@
+@@ -0,0 +1,1212 @@
 +import {
 +  PlayerInfo,
 +  PlayerType,
 +  UnitType,
 +} from "@openfront/engine-api/game/GameTypes";
 +import { AirfieldExecution } from "@openfront/engine/execution/AirfieldExecution";
-+import { AirliftExecution } from "@openfront/engine/execution/AirliftExecution";
-+import { AATurretExecution } from "@openfront/engine/execution/AATurretExecution";
++import {
++  AIRBORNE_COST,
++  AirliftExecution,
++} from "@openfront/engine/execution/AirliftExecution";
 +import { BunkerExecution } from "@openfront/engine/execution/BunkerExecution";
 +import { NukeExecution } from "@openfront/engine/execution/NukeExecution";
 +import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
@@ -4862,6 +4819,7 @@ index 0000000..d36bd9c
 +import { CivilAirportExecution } from "@openfront/engine/execution/CivilAirportExecution";
 +import { PlayerExecution } from "@openfront/engine/execution/PlayerExecution";
 +import { SAMLauncherExecution } from "@openfront/engine/execution/SAMLauncherExecution";
++import { ConstructionExecution } from "@openfront/engine/execution/ConstructionExecution";
 +import { NationModBehavior } from "@openfront/engine/execution/nation/NationModBehavior";
 +import { BioZoneExecution } from "@openfront/engine/execution/BioZoneExecution";
 +import {
@@ -4920,66 +4878,37 @@ index 0000000..d36bd9c
 +    expect(ex.fighterCount()).toBe(2);
 +  });
 +
-+  test("fighter strike needs a skyport with a fighter; it uses up 1 fighter, no gold", () => {
++  test("airborne needs a skyport and 3M, then attacks", () => {
 +    p1.addGold(50_000_000n);
 +    p1.addTroops(100_000);
 +    const dst = game.ref(5, 2);
 +
++    const before = p1.gold();
 +    game.addExecution(new AirliftExecution(p1, dst, 1000));
 +    executeTicks(game, 2);
-+    expect(game.units(UnitType.Airborne).length).toBe(0); // 스카이포트 없음 -> 실패
++    expect(p1.gold()).toBe(before); // 스카이포트 없음 -> 실패
++    expect(game.units(UnitType.Airborne).length).toBe(0);
 +
-+    const af = p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
-+    game.addExecution(new AirfieldExecution(af));
++    p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
 +    executeTicks(game, 2);
-+    game.addExecution(new AirliftExecution(p1, dst, 1000));
-+    executeTicks(game, 2);
-+    expect(game.units(UnitType.Airborne).length).toBe(0); // 전투기가 아직 없음
-+
-+    af.setTroops(2); // 전투기 2대 보유
++    const g = p1.gold();
 +    const t = p1.troops();
-+    const goldBefore = p1.gold();
 +    game.addExecution(new AirliftExecution(p1, dst, 1000));
 +    executeTicks(game, 1);
-+    expect(af.troops()).toBe(1); // 전투기 1대 소모
-+    expect(p1.gold()).toBe(goldBefore); // 돈은 안 든다
++    expect(p1.gold()).toBe(g - AIRBORNE_COST); // 출격 3M
 +    expect(p1.troops()).toBeLessThan(t);
 +    executeTicks(game, 30);
 +    expect(p1.numTilesOwned()).toBeGreaterThan(18);
 +  });
 +
-+  test("AA turret: 7M fixed, shoots down airborne, 13s cooldown", () => {
-+    expect(game.config().unitInfo(UnitType.AATurret).cost(game, p2)).toBe(
-+      7_000_000n,
-+    );
-+    p1.addGold(50_000_000n);
++  test("airborne is not sent without 3M", () => {
 +    p1.addTroops(100_000);
-+    const af = p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
-+    game.addExecution(new AirfieldExecution(af));
-+    af.setTroops(3); // 세 번 출격할 전투기
-+    const turret = p2.buildUnit(UnitType.AATurret, game.ref(5, 3), {});
-+    game.addExecution(new AATurretExecution(turret));
++    p1.buildUnit(UnitType.Airfield, game.ref(1, 1), {});
 +    executeTicks(game, 2);
-+
-+    const dst = game.ref(5, 2);
-+    game.addExecution(new AirliftExecution(p1, dst, 1000));
-+    executeTicks(game, 30);
-+    expect(game.owner(dst)).toBe(p2); // 격추됨
-+    expect(turret.isInCooldown()).toBe(true);
-+
-+    executeTicks(game, 140); // 13초 지남
-+    expect(turret.isInCooldown()).toBe(false);
-+    game.addExecution(new AirliftExecution(p1, dst, 1000));
-+    executeTicks(game, 1);
-+    // 두 번째는 쿨타임이 끝난 터렛이 다시 격추
-+    executeTicks(game, 30);
-+    expect(game.owner(dst)).toBe(p2);
-+    expect(turret.isInCooldown()).toBe(true);
-+
-+    // 쿨타임 중에 보내면 통과
-+    game.addExecution(new AirliftExecution(p1, dst, 1000));
-+    executeTicks(game, 30);
-+    expect(game.owner(dst)).toBe(p1);
++    p1.removeGold(p1.gold()); // 돈을 전부 없앤다
++    game.addExecution(new AirliftExecution(p1, game.ref(5, 2), 1000));
++    executeTicks(game, 2);
++    expect(game.units(UnitType.Airborne).length).toBe(0);
 +  });
 +});
 +
@@ -5410,7 +5339,7 @@ index 0000000..d36bd9c
 +    expect(g.units(UnitType.Airborne).length).toBe(0);
 +  });
 +
-+  test("skyport upgrade holds more fighters; AA turret upgrade reaches farther", async () => {
++  test("skyport upgrade holds more fighters", async () => {
 +    const { g, a } = await two();
 +    const af = a.buildUnit(UnitType.Airfield, g.ref(5, 5), {});
 +    const ex = new AirfieldExecution(af);
@@ -5420,13 +5349,6 @@ index 0000000..d36bd9c
 +    expect(af.level()).toBe(2);
 +    executeTicks(g, 2000);
 +    expect(ex.fighterCount()).toBe(4); // 레벨 2 = 4대 보관
-+
-+    const { aaTurretRange, aaTurretCooldown } =
-+      await import("@openfront/engine/execution/AATurretExecution");
-+    expect(aaTurretRange(2)).toBeGreaterThan(aaTurretRange(1));
-+    expect(aaTurretCooldown(2)).toBeLessThan(aaTurretCooldown(1));
-+    const tur = a.buildUnit(UnitType.AATurret, g.ref(8, 8), {});
-+    expect(a.canUpgradeUnit(tur)).toBe(true);
 +  });
 +});
 +
@@ -5436,9 +5358,9 @@ index 0000000..d36bd9c
 +      new PlayerInfo("n", PlayerType.Nation, null, "n"),
 +    ]);
 +    const n = g.player("n");
-+    for (let x = 0; x < 40; x++)
-+      for (let y = 0; y < 40; y++) n.conquer(g.ref(x, y));
-+    n.buildUnit(UnitType.City, g.ref(20, 20), {});
++    for (let x = 0; x < 90; x++)
++      for (let y = 0; y < 90; y++) n.conquer(g.ref(x, y));
++    n.buildUnit(UnitType.City, g.ref(45, 45), {});
 +    executeTicks(g, 5);
 +    const ai = new NationModBehavior(g, n);
 +    for (let i = 0; i < 400; i++) {
@@ -5459,7 +5381,6 @@ index 0000000..d36bd9c
 +    expect(n.units(UnitType.CivilAirport).length).toBeGreaterThan(0);
 +    expect(n.units(UnitType.Bunker).length).toBe(1);
 +    expect(n.units(UnitType.Airfield).length).toBe(1);
-+    expect(n.units(UnitType.AATurret).length).toBe(1);
 +  });
 +});
 +
@@ -5524,9 +5445,9 @@ index 0000000..d36bd9c
 +      new PlayerInfo("n", PlayerType.Nation, null, "n"),
 +    ]);
 +    const n = g.player("n");
-+    for (let x = 0; x < 40; x++)
-+      for (let y = 0; y < 40; y++) n.conquer(g.ref(x, y));
-+    n.buildUnit(UnitType.City, g.ref(20, 20), {});
++    for (let x = 0; x < 90; x++)
++      for (let y = 0; y < 90; y++) n.conquer(g.ref(x, y));
++    n.buildUnit(UnitType.City, g.ref(45, 45), {});
 +    executeTicks(g, 5);
 +    const ai = new NationModBehavior(g, n);
 +    for (let i = 0; i < 600; i++) {
@@ -5667,24 +5588,10 @@ index 0000000..d36bd9c
 +    expect(g.units(UnitType.Airborne).length).toBe(0); // 착륙 후 사라짐
 +    expect(a.numTilesOwned()).toBeGreaterThan(400);
 +  });
-+
-+  test("an enemy AA turret shoots the plane down mid-flight", async () => {
-+    const { g, a, b } = await longFlight();
-+    const turret = b.buildUnit(UnitType.AATurret, g.ref(40, 8), {});
-+    g.addExecution(new AATurretExecution(turret));
-+    const dst = g.ref(75, 10);
-+    g.addExecution(new AirliftExecution(a, dst, 5000));
-+    executeTicks(g, 2);
-+    const plane = g.units(UnitType.Airborne)[0];
-+    executeTicks(g, 120);
-+    expect(plane.isActive()).toBe(false); // 중간에 격추
-+    expect(turret.isInCooldown()).toBe(true);
-+    expect(g.owner(dst)).toBe(b); // 땅은 못 얻음
-+  });
 +});
 +
-+describe("Nation AI fighter raids", () => {
-+  async function raid(withTurret: boolean, fighters: number) {
++describe("Nation AI airborne raids", () => {
++  async function raid(gold: bigint, withFarEnemyOnly = false) {
 +    const g = await setup("plains", { instantBuild: true }, [
 +      new PlayerInfo("n", PlayerType.Nation, null, "n"),
 +      new PlayerInfo("h", PlayerType.Human, null, "h"),
@@ -5695,37 +5602,51 @@ index 0000000..d36bd9c
 +      for (let y = 0; y < 20; y++) n.conquer(g.ref(x, y));
 +    for (let x = 60; x < 70; x++)
 +      for (let y = 0; y < 10; y++) h.conquer(g.ref(x, y));
-+    n.addGold(100_000_000n);
++    n.addGold(gold);
 +    n.addTroops(200_000);
-+    const af = n.buildUnit(UnitType.Airfield, g.ref(5, 5), {});
-+    af.setTroops(fighters);
-+    if (withTurret) {
-+      const t = h.buildUnit(UnitType.AATurret, g.ref(65, 5), {});
-+      g.addExecution(new AATurretExecution(t));
-+    }
++    n.buildUnit(UnitType.Airfield, g.ref(5, 5), {});
 +    executeTicks(g, 400);
-+    af.setTroops(fighters);
 +    const ai = new NationModBehavior(g, n);
 +    ai.think();
 +    executeTicks(g, 2);
-+    return { planes: g.units(UnitType.Airborne).length, left: af.troops() };
++    return {
++      planes: g.units(UnitType.Airborne).filter((u) => u.troops() > 0).length,
++      withFarEnemyOnly,
++    };
 +  }
 +
-+  test("AI uses its fighters right away to invade, and waits if no fighters", async () => {
-+    expect((await raid(false, 0)).planes).toBe(0);
-+    const r = await raid(false, 1);
-+    expect(r.planes).toBe(1);
-+    expect(r.left).toBe(0);
++  test("AI with a skyport and money invades right away; without money it waits", async () => {
++    expect((await raid(0n)).planes).toBe(0);
++    expect((await raid(100_000_000n)).planes).toBe(1);
 +  });
 +
-+  test("AI avoids a ready AA turret unless its fighter stock is full", async () => {
-+    expect((await raid(true, 1)).planes).toBe(0); // 재고가 가득 차지 않았으면 피한다
-+    expect((await raid(true, 2)).planes).toBe(1); // 가득 차면 밀어붙인다
++  test("AI keeps launching until 3 troop planes are in the air", async () => {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("n", PlayerType.Nation, null, "n"),
++      new PlayerInfo("h", PlayerType.Human, null, "h"),
++    ]);
++    const n = g.player("n");
++    const h = g.player("h");
++    for (let x = 0; x < 20; x++)
++      for (let y = 0; y < 20; y++) n.conquer(g.ref(x, y));
++    for (let x = 60; x < 70; x++)
++      for (let y = 0; y < 10; y++) h.conquer(g.ref(x, y));
++    n.addGold(1_000_000_000n);
++    n.addTroops(400_000);
++    n.buildUnit(UnitType.Airfield, g.ref(5, 5), {});
++    executeTicks(g, 400);
++    const ai = new NationModBehavior(g, n);
++    for (let i = 0; i < 6; i++) {
++      ai.think();
++      executeTicks(g, 1); // 아직 비행 중 (먼 거리)
++    }
++    const air = g.units(UnitType.Airborne).filter((u) => u.troops() > 0).length;
++    expect(air).toBe(3);
 +  });
 +});
 +
 +describe("Landing on a surrounded tile", () => {
-+  test("a fighter landing inside enemy land is not annexed right away (beachhead)", async () => {
++  test("an airborne landing inside enemy land is not annexed right away (beachhead)", async () => {
 +    async function run(beachhead: boolean) {
 +      const g = await setup("plains", { instantBuild: true }, [
 +        new PlayerInfo("a", PlayerType.Human, null, "a"),
@@ -5751,7 +5672,7 @@ index 0000000..d36bd9c
 +    expect(await run(true)).toBe(true); // 상륙 거점: 버틴다
 +  });
 +
-+  test("a fighter landing sets a beachhead that survives being surrounded", async () => {
++  test("an airborne landing sets a beachhead that survives being surrounded", async () => {
 +    const g = await setup("plains", { instantBuild: true }, [
 +      new PlayerInfo("a", PlayerType.Human, null, "a"),
 +      new PlayerInfo("b", PlayerType.Human, null, "b"),
@@ -5763,6 +5684,7 @@ index 0000000..d36bd9c
 +    for (let x = 20; x < 60; x++)
 +      for (let y = 0; y < 40; y++) b.conquer(g.ref(x, y));
 +    a.addTroops(100_000);
++    a.addGold(100_000_000n); // 에어본 출격 3M
 +    const af = a.buildUnit(UnitType.Airfield, g.ref(5, 5), {});
 +    af.setTroops(1);
 +    g.addExecution(new PlayerExecution(a));
@@ -5990,10 +5912,121 @@ index 0000000..d36bd9c
 +    expect(tb.health()).toBe(tb.maxHealth());
 +  });
 +});
++
++describe("Metropolis, Town and fast tanks", () => {
++  async function solo() {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++    ]);
++    const a = g.player("a");
++    for (let x = 0; x < 40; x++)
++      for (let y = 0; y < 40; y++) a.conquer(g.ref(x, y));
++    a.addGold(1_000_000_000n);
++    executeTicks(g, 5);
++    return { g, a };
++  }
++
++  test("prices: metropolis 3.7M, town 0.6M, fixed no matter how many", async () => {
++    const { g, a } = await solo();
++    const cost = (t: UnitType) => g.config().unitInfo(t).cost(g, a);
++    expect(cost(UnitType.Metropolis)).toBe(3_700_000n);
++    expect(cost(UnitType.Town)).toBe(600_000n);
++    a.buildUnit(UnitType.Metropolis, g.ref(5, 5), {});
++    a.buildUnit(UnitType.Town, g.ref(15, 15), {});
++    expect(cost(UnitType.Metropolis)).toBe(3_700_000n);
++    expect(cost(UnitType.Town)).toBe(600_000n);
++  });
++
++  test("population cap: metropolis = 4 cities, town = a city / 1.5", async () => {
++    const { g, a } = await solo();
++    const base = g.config().maxTroops(a);
++    const inc = g.config().cityTroopIncrease();
++    const cityUnit = a.buildUnit(UnitType.City, g.ref(5, 5), {});
++    const withCity = g.config().maxTroops(a);
++    expect(withCity - base).toBeCloseTo(inc, 3);
++    cityUnit.delete(false);
++
++    const metro = a.buildUnit(UnitType.Metropolis, g.ref(5, 5), {});
++    expect(g.config().maxTroops(a) - base).toBeCloseTo(inc * 4, 3); // 도시의 4배
++    metro.delete(false);
++
++    const town = a.buildUnit(UnitType.Town, g.ref(15, 15), {});
++    const gain = g.config().maxTroops(a) - base;
++    expect(gain).toBeCloseTo(Math.floor(inc / 1.5), 3); // 도시보다 1.5배 적다
++    expect(gain).toBeLessThan(inc);
++
++    // 업그레이드하면 레벨만큼 커진다
++    expect(a.canUpgradeUnit(town)).toBe(true);
++    a.upgradeUnit(town);
++    expect(g.config().maxTroops(a) - base).toBeCloseTo(
++      Math.floor((inc * 2) / 1.5),
++      3,
++    );
++  });
++
++  test("unfinished buildings do not count", async () => {
++    const g = await setup("plains", {}, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++    ]);
++    const a = g.player("a");
++    for (let x = 0; x < 40; x++)
++      for (let y = 0; y < 40; y++) a.conquer(g.ref(x, y));
++    a.addGold(100_000_000n);
++    executeTicks(g, 5);
++    const base = g.config().maxTroops(a);
++    g.addExecution(
++      new ConstructionExecution(a, UnitType.Metropolis, g.ref(5, 5)),
++    );
++    executeTicks(g, 3);
++    expect(g.config().maxTroops(a)).toBe(base); // 아직 짓는 중
++    executeTicks(g, 80);
++    expect(g.config().maxTroops(a)).toBe(
++      base + g.config().cityTroopIncrease() * 4,
++    );
++  });
++
++  test("tanks are built in half a second (mass production)", async () => {
++    const g = await setup("plains", {}, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++    ]);
++    expect(g.config().unitInfo(UnitType.Tank).constructionDuration).toBe(5);
++    expect(
++      g.config().unitInfo(UnitType.City).constructionDuration,
++    ).toBeGreaterThan(5);
++  });
++
++  test("nation AI builds towns and metropolises", async () => {
++    const g = await setup("plains", { instantBuild: true }, [
++      new PlayerInfo("n", PlayerType.Nation, null, "n"),
++    ]);
++    const n = g.player("n");
++    for (let x = 0; x < 50; x++)
++      for (let y = 0; y < 50; y++) n.conquer(g.ref(x, y));
++    n.buildUnit(UnitType.City, g.ref(25, 25), {});
++    executeTicks(g, 5);
++    const ai = new NationModBehavior(g, n);
++    for (let i = 0; i < 300; i++) {
++      n.addGold(6_000_000n);
++      ai.think();
++      executeTicks(g, 3);
++    }
++    expect(n.units(UnitType.Town).length).toBeGreaterThan(0);
++    expect(n.units(UnitType.Metropolis).length).toBeGreaterThan(0);
++  });
++});
 diff --git a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
-index f817747..30c274a 100644
+index f817747..22a1bb9 100644
 --- a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
 +++ b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
+@@ -2,7 +2,7 @@
+ 
+ exports[`nation gold per minute > world map, impossible nations, 20 minutes 1`] = `
+ {
+-  "aliveNations": 41,
++  "aliveNations": 38,
+   "perMinute": [
+     {
+       "cities": 0,
 @@ -173,83 +173,83 @@ exports[`nation gold per minute > world map, impossible nations, 20 minutes 1`]
        "trainsRunning": 343,
      },
@@ -6021,7 +6054,7 @@ index f817747..30c274a 100644
      {
 -      "cities": 167,
 -      "factories": 68,
-+      "cities": 173,
++      "cities": 175,
 +      "factories": 72,
        "minute": 16,
 -      "ports": 115,
@@ -6031,60 +6064,59 @@ index f817747..30c274a 100644
 -      "trainGold": 19940000,
 -      "trainStops": 508,
 -      "trainsRunning": 161,
-+      "ports": 118,
++      "ports": 117,
 +      "shipsArrived": 249,
-+      "tradeGold": 63090000,
-+      "tradeShipsAtSea": 552,
-+      "trainGold": 30830000,
-+      "trainStops": 735,
++      "tradeGold": 63070000,
++      "tradeShipsAtSea": 548,
++      "trainGold": 30840000,
++      "trainStops": 734,
 +      "trainsRunning": 336,
      },
      {
 -      "cities": 172,
 -      "factories": 74,
-+      "cities": 174,
-+      "factories": 71,
++      "cities": 176,
++      "factories": 75,
        "minute": 17,
--      "ports": 121,
+       "ports": 121,
 -      "shipsArrived": 254,
 -      "tradeGold": 62040000,
 -      "tradeShipsAtSea": 536,
 -      "trainGold": 20330000,
 -      "trainStops": 583,
 -      "trainsRunning": 287,
-+      "ports": 119,
-+      "shipsArrived": 292,
-+      "tradeGold": 74470000,
-+      "tradeShipsAtSea": 507,
-+      "trainGold": 31000000,
-+      "trainStops": 761,
-+      "trainsRunning": 371,
++      "shipsArrived": 298,
++      "tradeGold": 77660000,
++      "tradeShipsAtSea": 511,
++      "trainGold": 34200000,
++      "trainStops": 793,
++      "trainsRunning": 420,
      },
      {
 -      "cities": 174,
 -      "factories": 79,
-+      "cities": 180,
++      "cities": 179,
 +      "factories": 78,
        "minute": 18,
-       "ports": 121,
+-      "ports": 121,
 -      "shipsArrived": 265,
 -      "tradeGold": 65090000,
 -      "tradeShipsAtSea": 587,
 -      "trainGold": 19830000,
 -      "trainStops": 575,
 -      "trainsRunning": 343,
-+      "shipsArrived": 233,
-+      "tradeGold": 59630000,
-+      "tradeShipsAtSea": 581,
-+      "trainGold": 25050000,
-+      "trainStops": 674,
-+      "trainsRunning": 385,
++      "ports": 124,
++      "shipsArrived": 262,
++      "tradeGold": 61400000,
++      "tradeShipsAtSea": 570,
++      "trainGold": 36120000,
++      "trainStops": 867,
++      "trainsRunning": 392,
      },
      {
 -      "cities": 175,
--      "factories": 77,
-+      "cities": 180,
-+      "factories": 83,
++      "cities": 174,
+       "factories": 77,
        "minute": 19,
 -      "ports": 121,
 -      "shipsArrived": 279,
@@ -6093,19 +6125,19 @@ index f817747..30c274a 100644
 -      "trainGold": 23670000,
 -      "trainStops": 638,
 -      "trainsRunning": 336,
-+      "ports": 126,
-+      "shipsArrived": 301,
-+      "tradeGold": 73880000,
-+      "tradeShipsAtSea": 623,
-+      "trainGold": 28490000,
-+      "trainStops": 787,
-+      "trainsRunning": 420,
++      "ports": 124,
++      "shipsArrived": 295,
++      "tradeGold": 70160000,
++      "tradeShipsAtSea": 627,
++      "trainGold": 32060000,
++      "trainStops": 798,
++      "trainsRunning": 392,
      },
      {
 -      "cities": 186,
 -      "factories": 83,
-+      "cities": 179,
-+      "factories": 84,
++      "cities": 168,
++      "factories": 76,
        "minute": 20,
 -      "ports": 128,
 -      "shipsArrived": 332,
@@ -6114,13 +6146,13 @@ index f817747..30c274a 100644
 -      "trainGold": 33210000,
 -      "trainStops": 827,
 -      "trainsRunning": 497,
-+      "ports": 127,
-+      "shipsArrived": 329,
-+      "tradeGold": 79790000,
-+      "tradeShipsAtSea": 642,
-+      "trainGold": 32910000,
-+      "trainStops": 889,
-+      "trainsRunning": 420,
++      "ports": 120,
++      "shipsArrived": 292,
++      "tradeGold": 68880000,
++      "tradeShipsAtSea": 577,
++      "trainGold": 25340000,
++      "trainStops": 687,
++      "trainsRunning": 336,
      },
    ],
    "totals": {
@@ -6128,15 +6160,15 @@ index f817747..30c274a 100644
 -    "tradeGold": 669000000,
 -    "trainGold": 217900000,
 -    "trainStops": 5693,
-+    "shipsArrived": 2752,
-+    "tradeGold": 689300000,
-+    "trainGold": 250800000,
-+    "trainStops": 6439,
++    "shipsArrived": 2744,
++    "tradeGold": 679600000,
++    "trainGold": 261000000,
++    "trainStops": 6472,
    },
  }
  `;
 diff --git a/tests/client/PlayerStatsTable.test.ts b/tests/client/PlayerStatsTable.test.ts
-index 223e5e7..b98f62b 100644
+index 223e5e7..39d5eaa 100644
 --- a/tests/client/PlayerStatsTable.test.ts
 +++ b/tests/client/PlayerStatsTable.test.ts
 @@ -168,8 +168,9 @@ describe("PlayerStatsTable", () => {
@@ -6145,17 +6177,17 @@ index 223e5e7..b98f62b 100644
      expect(buildings, "buildings table should exist").toBeDefined();
 -    // The six structures, with the warship row moved to its own section.
 -    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(6);
-+    // 기본 건물 6개 + 모드로 추가한 5개(벙커, 스카이포트, 대공 터렛, 탱크, 민간 공항).
++    // 기본 건물 6개 + 모드로 추가한 6개(벙커, 스카이포트, 탱크, 민간 공항, 대도시, 마을).
 +    // 전함 행은 별도 구역으로 빠진다.
-+    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(11);
++    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(12);
      expect(buildings?.textContent).not.toContain("unit_type.warship");
  
      expect(columnsOf(table, "player_stats_table.warship_stats")).toEqual({
 diff --git a/tests/client/UnitDisplay.test.ts b/tests/client/UnitDisplay.test.ts
-index 8d6dbd8..2964de9 100644
+index 8d6dbd8..24af4a7 100644
 --- a/tests/client/UnitDisplay.test.ts
 +++ b/tests/client/UnitDisplay.test.ts
-@@ -138,7 +138,18 @@ describe("mobile UnitDisplay layout", () => {
+@@ -138,7 +138,19 @@ describe("mobile UnitDisplay layout", () => {
        await display.updateComplete;
  
        const grid = display.querySelector<HTMLElement>(".unit-display-grid");
@@ -6164,9 +6196,10 @@ index 8d6dbd8..2964de9 100644
 +      const modOnly = [
 +        UnitType.Bunker,
 +        UnitType.Airfield,
-+        UnitType.AATurret,
 +        UnitType.BunkerBuster,
 +        UnitType.CivilAirport,
++        UnitType.Metropolis,
++        UnitType.Town,
 +      ];
 +      const hotbarTypes = BuildMenus.types.filter(
 +        (t) => !(modOnly as UnitType[]).includes(t),
@@ -6176,17 +6209,26 @@ index 8d6dbd8..2964de9 100644
        display.remove();
      }
 diff --git a/tests/core/snapshot/FullGameSnapshot.test.ts b/tests/core/snapshot/FullGameSnapshot.test.ts
-index c561d5e..490a41c 100644
+index c561d5e..4d2679f 100644
 --- a/tests/core/snapshot/FullGameSnapshot.test.ts
 +++ b/tests/core/snapshot/FullGameSnapshot.test.ts
-@@ -196,7 +196,10 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
+@@ -196,7 +196,19 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
        if (Object.keys(overrides).length > 0) return; // checked once, on FFA
        // Runs during the spawn phase and finishes inside init, so it is never
        // alive at a tick boundary. BasicExecutions.test.ts covers it directly.
 -      const neverStored = new Set(["Pause"]);
 +      // 모드 추가 실행: 국가 AI가 아직 쓰지 않아 기준 게임에 나오지 않음
 +      // (tests/AirPowerMod.test.ts에서 직접 검증). AI 연결 후 이 목록에서 빼야 함.
-+      const modOnly = ["Bunker", "Airfield", "AATurret", "Airlift", "Tank", "ModUpgrade", "ModEquip", "CivilAirport", "BioZone"];
++      const modOnly = [
++        "Bunker",
++        "Airfield",
++        "Airlift",
++        "Tank",
++        "ModUpgrade",
++        "ModEquip",
++        "CivilAirport",
++        "BioZone",
++      ];
 +      const neverStored = new Set(["Pause", ...modOnly]);
        const missing = EXECUTION_SNAPSHOT_TYPES.map((t) => t.name).filter(
          (name) => !reference.execTypes.has(name) && !neverStored.has(name),
