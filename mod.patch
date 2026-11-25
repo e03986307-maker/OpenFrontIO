@@ -1,17 +1,18 @@
 diff --git a/index.html b/index.html
-index 988f2f7..5f328f5 100644
+index 988f2f7..316c1ab 100644
 --- a/index.html
 +++ b/index.html
-@@ -647,6 +647,7 @@
+@@ -647,6 +647,8 @@
          <game-right-sidebar></game-right-sidebar>
          <replay-panel></replay-panel>
        </div>
 +      <mod-panel></mod-panel>
++      <collapse-hud></collapse-hud>
      </div>
      <settings-modal></settings-modal>
      <!-- The in-game settings modal: the same component as #page-settings, but
 diff --git a/packages/engine-api/src/Schemas.ts b/packages/engine-api/src/Schemas.ts
-index 5332748..27cd62e 100644
+index 5332748..c77d8f9 100644
 --- a/packages/engine-api/src/Schemas.ts
 +++ b/packages/engine-api/src/Schemas.ts
 @@ -26,6 +26,9 @@ export type Intent =
@@ -34,7 +35,22 @@ index 5332748..27cd62e 100644
  export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
  export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
  export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
-@@ -439,6 +445,23 @@ export const BoatAttackIntentSchema = z.object({
+@@ -309,6 +315,14 @@ export const GameConfigSchema = z.object({
+   nameRevealPublicIds: z.string().array().max(200).optional(),
+   waterNukes: z.boolean().nullable().optional(),
+   randomSpawn: z.boolean(),
++  // 모드: 게임 시작 전에 켜고 끄는 새 규칙들
++  mods: z
++    .object({
++      collapse: z.boolean().optional(), // 붕괴 모드
++      fogOfWar: z.boolean().optional(), // 안개 전쟁
++      regions: z.boolean().optional(), // 수도·지역
++    })
++    .optional(),
+   // The onboarding tutorial (docs/OnboardingTutorial.md): nations and tribes
+   // only grow into free land, and the game ends once the human is alone.
+   tutorial: z.boolean().optional(),
+@@ -439,6 +453,23 @@ export const BoatAttackIntentSchema = z.object({
    dst: zb.uint(),
  });
  
@@ -58,7 +74,7 @@ index 5332748..27cd62e 100644
  export const AllianceRequestIntentSchema = z.object({
    type: z.literal("allianceRequest"),
    recipient: MappedID,
-@@ -573,6 +596,9 @@ export const IntentSchema = z.discriminatedUnion("type", [
+@@ -573,6 +604,9 @@ export const IntentSchema = z.discriminatedUnion("type", [
    SpawnIntentSchema,
    MarkDisconnectedIntentSchema,
    BoatAttackIntentSchema,
@@ -69,7 +85,7 @@ index 5332748..27cd62e 100644
    AllianceRequestIntentSchema,
    AllianceRejectIntentSchema,
 diff --git a/packages/engine-api/src/StatsSchemas.ts b/packages/engine-api/src/StatsSchemas.ts
-index ff2925f..dff690a 100644
+index ff2925f..ac5e99b 100644
 --- a/packages/engine-api/src/StatsSchemas.ts
 +++ b/packages/engine-api/src/StatsSchemas.ts
 @@ -2,20 +2,22 @@ import { zb, ZbEncodeError } from "@openfront/zbin";
@@ -97,7 +113,7 @@ index ff2925f..dff690a 100644
  } as const satisfies Record<NukeType, BombUnit>;
  
  export const boatUnits = ["trade", "trans"] as const;
-@@ -36,6 +38,12 @@ export const otherUnits = [
+@@ -36,6 +38,13 @@ export const otherUnits = [
    "silo",
    "saml",
    "fact",
@@ -107,10 +123,11 @@ index ff2925f..dff690a 100644
 +  "capt",
 +  "metr",
 +  "town",
++  "pirt",
  ] as const;
  export const OtherUnitSchema = z.enum(otherUnits);
  export type OtherUnit = z.infer<typeof OtherUnitSchema>;
-@@ -46,7 +54,13 @@ export type OtherUnitType =
+@@ -46,7 +55,14 @@ export type OtherUnitType =
    | UnitType.Port
    | UnitType.SAMLauncher
    | UnitType.Warship
@@ -121,11 +138,12 @@ index ff2925f..dff690a 100644
 +  | UnitType.Tank
 +  | UnitType.CivilAirport
 +  | UnitType.Metropolis
-+  | UnitType.Town;
++  | UnitType.Town
++  | UnitType.PirateShip;
  
  export const unitTypeToOtherUnit = {
    [UnitType.City]: "city",
-@@ -56,6 +70,12 @@ export const unitTypeToOtherUnit = {
+@@ -56,6 +72,13 @@ export const unitTypeToOtherUnit = {
    [UnitType.SAMLauncher]: "saml",
    [UnitType.Warship]: "wshp",
    [UnitType.Factory]: "fact",
@@ -135,14 +153,15 @@ index ff2925f..dff690a 100644
 +  [UnitType.CivilAirport]: "capt",
 +  [UnitType.Metropolis]: "metr",
 +  [UnitType.Town]: "town",
++  [UnitType.PirateShip]: "pirt",
  } as const satisfies Record<OtherUnitType, OtherUnit>;
  
  // Attacks
 diff --git a/packages/engine-api/src/game/GameTypes.ts b/packages/engine-api/src/game/GameTypes.ts
-index c97c4ca..5c33879 100644
+index c97c4ca..4e75edb 100644
 --- a/packages/engine-api/src/game/GameTypes.ts
 +++ b/packages/engine-api/src/game/GameTypes.ts
-@@ -208,6 +208,15 @@ export enum UnitType {
+@@ -208,6 +208,16 @@ export enum UnitType {
    MIRVWarhead = "MIRV Warhead",
    Train = "Train",
    Factory = "Factory",
@@ -155,10 +174,11 @@ index c97c4ca..5c33879 100644
 +  Airborne = "Airborne",
 +  Metropolis = "Metropolis",
 +  Town = "Town",
++  PirateShip = "Pirate Ship",
  }
  
  export enum TrainType {
-@@ -221,12 +230,14 @@ export const Nukes = unitTypeGroup([
+@@ -221,13 +231,16 @@ export const Nukes = unitTypeGroup([
    UnitType.HydrogenBomb,
    UnitType.MIRVWarhead,
    UnitType.MIRV,
@@ -171,9 +191,11 @@ index c97c4ca..5c33879 100644
    UnitType.MIRV,
 +  UnitType.BunkerBuster,
    UnitType.Warship,
++  UnitType.PirateShip,
  ] as const);
  
-@@ -237,6 +248,11 @@ export const Structures = unitTypeGroup([
+ export const Structures = unitTypeGroup([
+@@ -237,6 +250,11 @@ export const Structures = unitTypeGroup([
    UnitType.MissileSilo,
    UnitType.Port,
    UnitType.Factory,
@@ -185,7 +207,7 @@ index c97c4ca..5c33879 100644
  ] as const);
  
  export const BuildMenus = unitTypeGroup([
-@@ -247,6 +263,7 @@ export const BuildMenus = unitTypeGroup([
+@@ -247,6 +265,7 @@ export const BuildMenus = unitTypeGroup([
  export const PlayerBuildable = unitTypeGroup([
    ...BuildMenus.types,
    UnitType.TransportShip,
@@ -554,7 +576,7 @@ index 0000000..2ed0bca
 +/** 벙커: 폭격으로 인한 병력 손실 배율 (너프: 예전 0.1 = 90% 감소 -> 0.5 = 50% 감소) */
 +export const BUNKER_TROOP_LOSS_FACTOR = 0.5;
 diff --git a/packages/engine-lib/src/configuration/Config.ts b/packages/engine-lib/src/configuration/Config.ts
-index aee417f..ab28ee1 100644
+index aee417f..9660ea9 100644
 --- a/packages/engine-lib/src/configuration/Config.ts
 +++ b/packages/engine-lib/src/configuration/Config.ts
 @@ -84,6 +84,10 @@ const OVERTIME_DEFAULTS = {
@@ -568,7 +590,48 @@ index aee417f..ab28ee1 100644
  export class Config {
    private unitInfoCache = new Map<UnitType, UnitInfo>();
    constructor(
-@@ -232,6 +236,38 @@ export class Config {
+@@ -143,13 +147,26 @@ export class Config {
+       dropPercentPerMinute: d.dropPercentPerMinute,
+     };
+   }
++  /** 모드 스위치 */
++  collapseMode(): boolean {
++    return this._gameConfig.mods?.collapse === true;
++  }
++  fogOfWarMode(): boolean {
++    return this._gameConfig.mods?.fogOfWar === true;
++  }
++  regionsMode(): boolean {
++    return this._gameConfig.mods?.regions === true;
++  }
+   spawnImmunityDuration(): Tick {
+-    return (
+-      this._gameConfig.spawnImmunityDuration ?? DEFAULT_SPAWN_IMMUNITY_TICKS
+-    );
++    const base =
++      this._gameConfig.spawnImmunityDuration ?? DEFAULT_SPAWN_IMMUNITY_TICKS;
++    // 붕괴 모드: 시작 후 2분은 서로 공격할 수 없다
++    return this.collapseMode() ? Math.max(base, 2 * 60 * 10) : base;
+   }
+   nationSpawnImmunityDuration(): Tick {
+-    return DEFAULT_SPAWN_IMMUNITY_TICKS;
++    return this.collapseMode()
++      ? Math.max(DEFAULT_SPAWN_IMMUNITY_TICKS, 2 * 60 * 10)
++      : DEFAULT_SPAWN_IMMUNITY_TICKS;
+   }
+   hasExtendedSpawnImmunity(): boolean {
+     return this.spawnImmunityDuration() > DEFAULT_SPAWN_IMMUNITY_TICKS;
+@@ -214,6 +231,9 @@ export class Config {
+       case UnitType.Warship:
+         info = { maxHealth: 1000 };
+         break;
++      case UnitType.PirateShip:
++        info = { maxHealth: 300 }; // 군함보다 훨씬 약하다
++        break;
+       case UnitType.Shell:
+         info = { damage: 250 };
+         break;
+@@ -232,6 +252,38 @@ export class Config {
        case UnitType.DefensePost:
          info = { constructionDuration: this.instantBuild() ? 0 : 5 * 10 };
          break;
@@ -607,7 +670,7 @@ index aee417f..ab28ee1 100644
        case UnitType.SAMLauncher:
          info = {
            constructionDuration: this.instantBuild()
-@@ -253,6 +289,7 @@ export class Config {
+@@ -253,6 +305,7 @@ export class Config {
        case UnitType.HydrogenBomb:
        case UnitType.MIRV:
        case UnitType.MIRVWarhead:
@@ -615,7 +678,7 @@ index aee417f..ab28ee1 100644
        case UnitType.TradeShip:
        case UnitType.Train:
          info = {};
-@@ -342,12 +379,20 @@ export class Config {
+@@ -342,12 +395,20 @@ export class Config {
    }
  
    private troopCap(player: PlayerLike, withCities: boolean): number {
@@ -641,7 +704,7 @@ index aee417f..ab28ee1 100644
        : 0;
      const maxTroops =
        player.type() === PlayerType.Human && this.hasInfiniteTroopsFor(player)
-@@ -427,6 +472,9 @@ export class Config {
+@@ -427,6 +488,9 @@ export class Config {
          return { inner: 12, outer: 30 };
        case UnitType.HydrogenBomb:
          return { inner: 80, outer: 100 };
@@ -652,10 +715,10 @@ index aee417f..ab28ee1 100644
      throw new Error(`Unknown nuke type: ${unitType}`);
    }
 diff --git a/packages/engine-lib/src/game/PackedUnitUpdates.ts b/packages/engine-lib/src/game/PackedUnitUpdates.ts
-index 5c7ef72..b627ca6 100644
+index 5c7ef72..40369ea 100644
 --- a/packages/engine-lib/src/game/PackedUnitUpdates.ts
 +++ b/packages/engine-lib/src/game/PackedUnitUpdates.ts
-@@ -46,6 +46,15 @@ export const PACKED_UNIT_TYPES: readonly UnitType[] = [
+@@ -46,6 +46,16 @@ export const PACKED_UNIT_TYPES: readonly UnitType[] = [
    UnitType.MIRVWarhead, // 14
    UnitType.Train, // 15
    UnitType.Factory, // 16
@@ -668,11 +731,31 @@ index 5c7ef72..b627ca6 100644
 +  UnitType.Airborne, // 24
 +  UnitType.Metropolis, // 25
 +  UnitType.Town, // 26
++  UnitType.PirateShip, // 27
  ] as const;
  
  const UNIT_TYPE_TO_INT = new Map<UnitType, number>(
+diff --git a/packages/engine/src/GameRunner.ts b/packages/engine/src/GameRunner.ts
+index 12ed15a..29534a0 100644
+--- a/packages/engine/src/GameRunner.ts
++++ b/packages/engine/src/GameRunner.ts
+@@ -1,3 +1,4 @@
++import { CollapseExecution } from "./execution/CollapseExecution";
+ import { TileRef } from "@openfront/engine-api/game/GameMap";
+ import {
+   AllPlayers,
+@@ -195,6 +196,9 @@ export class GameRunner {
+         ...this.execManager.spawnTribes(this.game.config().bots()),
+       );
+     }
++    if (this.game.config().collapseMode()) {
++      this.game.addExecution(new CollapseExecution(this.execManager.gameID()));
++    }
+     this.game.addExecution(new WinCheckExecution());
+     if (this.game.config().doomsdayClockConfig().enabled) {
+       this.game.addExecution(new DoomsdayClockExecution());
 diff --git a/packages/engine/src/configuration/EngineConfig.ts b/packages/engine/src/configuration/EngineConfig.ts
-index 3016f33..e4d7903 100644
+index 3016f33..21c2dc7 100644
 --- a/packages/engine/src/configuration/EngineConfig.ts
 +++ b/packages/engine/src/configuration/EngineConfig.ts
 @@ -1,3 +1,8 @@
@@ -707,7 +790,17 @@ index 3016f33..e4d7903 100644
  // attackLogic tunables
  const LARGE_TERRITORY_MIDPOINT = 300_000;
  const LARGE_TERRITORY_STEEPNESS = 2.5;
-@@ -358,11 +379,20 @@ export class EngineConfig extends Config {
+@@ -346,6 +367,9 @@ export class EngineConfig extends Config {
+ 
+   private unitCost(type: UnitType): EngineUnitInfo["cost"] {
+     switch (type) {
++      case UnitType.PirateShip:
++        // 약탈선: 가격 2M 고정
++        return this.costWrapper(() => 2_000_000, UnitType.PirateShip);
+       case UnitType.Warship:
+         return this.costWrapper(
+           (numUnits: number) => Math.min(1_000_000, (numUnits + 1) * 250_000),
+@@ -358,11 +382,20 @@ export class EngineConfig extends Config {
            UnitType.Factory,
          );
        case UnitType.AtomBomb:
@@ -731,7 +824,7 @@ index 3016f33..e4d7903 100644
            if (
              player.type() === PlayerType.Human &&
              this.hasInfiniteGoldFor(player)
-@@ -370,7 +400,7 @@ export class EngineConfig extends Config {
+@@ -370,7 +403,7 @@ export class EngineConfig extends Config {
              return 0n;
            }
            return 25_000_000n + BigInt(game.mirvsLaunched()) * 15_000_000n;
@@ -740,7 +833,7 @@ index 3016f33..e4d7903 100644
        case UnitType.MissileSilo:
          return this.costWrapper(() => 1_000_000, UnitType.MissileSilo);
        case UnitType.DefensePost:
-@@ -378,6 +408,29 @@ export class EngineConfig extends Config {
+@@ -378,6 +411,29 @@ export class EngineConfig extends Config {
            (numUnits: number) => Math.min(250_000, (numUnits + 1) * 50_000),
            UnitType.DefensePost,
          );
@@ -770,7 +863,7 @@ index 3016f33..e4d7903 100644
        case UnitType.SAMLauncher:
          return this.costWrapper(
            (numUnits: number) => Math.min(3_000_000, (numUnits + 1) * 1_500_000),
-@@ -687,6 +740,7 @@ export class EngineConfig extends Config {
+@@ -687,6 +743,7 @@ export class EngineConfig extends Config {
      switch (unitType) {
        case UnitType.AtomBomb:
        case UnitType.HydrogenBomb:
@@ -1559,14 +1652,254 @@ index 0000000..b55fb9e
 +  schema: CivilAirportStateSchema,
 +  cls: () => CivilAirportExecution,
 +});
+diff --git a/packages/engine/src/execution/CollapseExecution.ts b/packages/engine/src/execution/CollapseExecution.ts
+new file mode 100644
+index 0000000..b9dfe8b
+--- /dev/null
++++ b/packages/engine/src/execution/CollapseExecution.ts
+@@ -0,0 +1,233 @@
++import { TileRef } from "@openfront/engine-api/game/GameMap";
++import { PlayerInfo, PlayerType } from "@openfront/engine-api/game/GameTypes";
++import { GameID } from "@openfront/engine-api/Schemas";
++import { pow } from "@openfront/engine-lib/DetMath";
++import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
++import { zInt, zRandom } from "@openfront/engine-lib/snapshot/SnapshotType";
++import { simpleHash } from "@openfront/engine-lib/Util";
++import { z } from "zod";
++import { Execution, Game, Player } from "../game/Game";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++import { SpawnExecution } from "./SpawnExecution";
++
++/** 붕괴 모드 규칙 값 (1초 = 10틱) */
++export const COLLAPSE_GRACE_TICKS = 2 * 60 * 10; // 시작 후 2분은 서로 공격 불가
++export const COLLAPSE_EMPIRE_LAND_SHARE = 0.55; // 제국들이 처음에 나눠 갖는 땅 비율
++export const COLLAPSE_MIN_EMPIRE_TILES = 300;
++export const COLLAPSE_START_TROOP_SHARE = 0.7; // 시작 병력 = 최대 병력의 70%
++export const COLLAPSE_FIRST_SPAWN_INTERVAL = 200; // 작은 나라 등장 간격: 처음 20초
++export const COLLAPSE_MIN_SPAWN_INTERVAL = 50; // 갈수록 5초까지 빨라진다
++export const COLLAPSE_MAX_SMALL_NATIONS = 80; // 동시에 존재하는 작은 나라 상한 (성능 보호)
++/** 시간이 지날수록 새로 나오는 작은 나라가 더 강하다: 분당 +30% */
++export function collapseStrength(minutesSinceGrace: number): number {
++  return 1 + 0.3 * Math.max(0, minutesSinceGrace);
++}
++/** 다음 작은 나라가 나올 때까지의 간격 (틱) */
++export function collapseSpawnInterval(minutesSinceGrace: number): number {
++  return Math.max(
++    COLLAPSE_MIN_SPAWN_INTERVAL,
++    Math.floor(
++      COLLAPSE_FIRST_SPAWN_INTERVAL * pow(0.85, minutesSinceGrace * 2),
++    ),
++  );
++}
++
++/**
++ * 붕괴 모드: "누가 더 오래 버티냐" 전쟁.
++ * 1) 시작할 때 모든 플레이어와 국가 AI가 땅을 크게 가진 제국이 된다 (인구 무한 설정은 쓰지 않는다).
++ * 2) 시작 후 2분 동안은 서로 공격할 수 없다 (스폰 보호 시간을 늘려서 처리).
++ * 3) 그 뒤로 제국 곁에 작은 나라(부족 AI)가 끊임없이 생기고, 시간이 갈수록 더 강하다.
++ */
++export class CollapseExecution implements Execution {
++  private active = true;
++  private mg: Game;
++  private random: PseudoRandom;
++  private empiresMade = false;
++  private nextSpawnTick = 0;
++  private spawned = 0;
++  /** 막 만들어진 작은 나라에 줄 보너스 병력 대기열 [플레이어 id, 병력] */
++  private pending: [string, number][] = [];
++
++  constructor(private gameID: GameID) {
++    this.random = new PseudoRandom(simpleHash(gameID) + 7);
++  }
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  /** 제국 처음 만들기: 스폰 지점에서 빈 땅으로 번져 나가며 땅을 차지한다 */
++  private makeEmpires(): void {
++    const empires: Player[] = [];
++    for (const p of this.mg.allPlayers()) {
++      if (p.type() === PlayerType.Bot) continue;
++      if (!p.isAlive()) continue;
++      empires.push(p);
++    }
++    if (empires.length === 0) return;
++    const land = this.mg.numLandTiles();
++    const share = Math.floor(
++      (land * COLLAPSE_EMPIRE_LAND_SHARE) / empires.length,
++    );
++    const target = Math.max(COLLAPSE_MIN_EMPIRE_TILES, share);
++
++    // 모든 제국이 같은 속도로 번지게 라운드로빈으로 한 칸씩 넓힌다
++    const frontier: TileRef[][] = empires.map((p) => [...p.borderTiles()]);
++    const sizes: number[] = empires.map((p) => p.numTilesOwned());
++    let progressed = true;
++    while (progressed) {
++      progressed = false;
++      for (let i = 0; i < empires.length; i++) {
++        if (sizes[i] >= target) continue;
++        const next: TileRef[] = [];
++        for (const t of frontier[i]) {
++          for (const n of this.mg.neighbors(t)) {
++            if (sizes[i] >= target) break;
++            if (!this.mg.isLand(n) || this.mg.hasOwner(n)) continue;
++            if (this.mg.isImpassable?.(n) === true) continue;
++            empires[i].conquer(n);
++            sizes[i]++;
++            next.push(n);
++            progressed = true;
++          }
++        }
++        frontier[i] = next.length > 0 ? next : frontier[i];
++      }
++    }
++    // 병력: 최대 병력의 일정 비율까지 채운다 (무한 병력이 아님)
++    for (const p of empires) {
++      const want = Math.floor(
++        this.mg.config().maxTroops(p) * COLLAPSE_START_TROOP_SHARE,
++      );
++      if (p.troops() < want) p.addTroops(want - p.troops());
++    }
++  }
++
++  /** 제국 국경 근처의 빈 땅 하나를 찾는다 */
++  private findSpawnTile(): TileRef | null {
++    const owners = [...this.mg.allPlayers()].filter(
++      (p) =>
++        p.type() !== PlayerType.Bot && p.isAlive() && p.numTilesOwned() > 0,
++    );
++    if (owners.length === 0) return null;
++    for (let attempt = 0; attempt < 12; attempt++) {
++      const owner = owners[this.random.nextInt(0, owners.length)];
++      const border = [...owner.borderTiles()];
++      if (border.length === 0) continue;
++      const b = border[this.random.nextInt(0, border.length)];
++      const bx = this.mg.x(b);
++      const by = this.mg.y(b);
++      // 삼각함수 없이 정수 오프셋으로 고른다 (엔진은 결정적 연산만 쓴다)
++      const dx = this.random.nextInt(-22, 23);
++      const dy = this.random.nextInt(-22, 23);
++      if (Math.abs(dx) + Math.abs(dy) < 6) continue;
++      const x = bx + dx;
++      const y = by + dy;
++      if (!this.mg.isValidCoord(x, y)) continue;
++      const t = this.mg.ref(x, y);
++      if (!this.mg.isLand(t) || this.mg.hasOwner(t)) continue;
++      return t;
++    }
++    return null;
++  }
++
++  tick(ticks: number): void {
++    if (this.mg.inSpawnPhase()) return;
++    if (!this.empiresMade) {
++      this.empiresMade = true;
++      this.makeEmpires();
++      this.nextSpawnTick = ticks + COLLAPSE_GRACE_TICKS;
++      return;
++    }
++
++    // 막 태어난 작은 나라에 시간에 따른 보너스 병력을 준다
++    if (this.pending.length > 0) {
++      const rest: [string, number][] = [];
++      for (const [id, bonus] of this.pending) {
++        if (this.mg.hasPlayer(id) && this.mg.player(id).hasSpawned()) {
++          this.mg.player(id).addTroops(bonus);
++        } else {
++          rest.push([id, bonus]);
++        }
++      }
++      this.pending = rest;
++    }
++
++    if (ticks < this.nextSpawnTick) return;
++    const minutes = (ticks - (this.nextSpawnTick - 0)) / 600 + 0;
++    const sinceGrace = Math.max(0, (ticks - COLLAPSE_GRACE_TICKS) / 600);
++    void minutes;
++    this.nextSpawnTick = ticks + collapseSpawnInterval(sinceGrace);
++
++    const alive = [...this.mg.allPlayers()].filter(
++      (p) => p.type() === PlayerType.Bot && p.isAlive(),
++    ).length;
++    if (alive >= COLLAPSE_MAX_SMALL_NATIONS) return;
++    const tile = this.findSpawnTile();
++    if (tile === null) return;
++    const id = this.random.nextID();
++    this.spawned++;
++    const info = new PlayerInfo(
++      `Rebels ${this.spawned}`,
++      PlayerType.Bot,
++      null,
++      id,
++    );
++    this.mg.addExecution(new SpawnExecution(this.gameID, info, tile));
++    const bonus = Math.floor(2_000 * collapseStrength(sinceGrace) ** 2);
++    this.pending.push([id, bonus]);
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    return CollapseExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      random: w.random(this.random),
++      empiresMade: this.empiresMade,
++      nextSpawnTick: this.nextSpawnTick,
++      spawned: this.spawned,
++      pending: this.pending.map(([id, n]) => [id, n]),
++    });
++  }
++
++  restoreSnapshot(s: CollapseState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.random = r.random(s.random);
++    this.empiresMade = s.empiresMade;
++    this.nextSpawnTick = s.nextSpawnTick;
++    this.spawned = s.spawned;
++    this.pending = s.pending.map(([id, n]) => [id, n]);
++  }
++}
++
++const CollapseStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  random: zRandom(),
++  empiresMade: z.boolean(),
++  nextSpawnTick: zInt(),
++  spawned: zInt(),
++  pending: z.array(z.tuple([z.string(), zInt()])),
++});
++type CollapseState = z.infer<typeof CollapseStateSchema>;
++
++export const CollapseExecutionSnapshot = execSnapshotType({
++  name: "Collapse",
++  version: 1,
++  schema: CollapseStateSchema,
++  cls: () => CollapseExecution,
++});
 diff --git a/packages/engine/src/execution/ConstructionExecution.ts b/packages/engine/src/execution/ConstructionExecution.ts
-index 99d0900..8a24fa1 100644
+index 99d0900..418de1d 100644
 --- a/packages/engine/src/execution/ConstructionExecution.ts
 +++ b/packages/engine/src/execution/ConstructionExecution.ts
-@@ -15,6 +15,10 @@ import type {
+@@ -15,6 +15,11 @@ import type {
    SnapshotWriter,
  } from "../snapshot/SnapshotContext";
  import { CityExecution } from "./CityExecution";
++import { PirateExecution } from "./PirateExecution";
 +import { TankExecution } from "./TankExecution";
 +import { CivilAirportExecution } from "./CivilAirportExecution";
 +import { AirfieldExecution } from "./AirfieldExecution";
@@ -1574,7 +1907,7 @@ index 99d0900..8a24fa1 100644
  import { DefensePostExecution } from "./DefensePostExecution";
  import { FactoryExecution } from "./FactoryExecution";
  import { MirvExecution } from "./MIRVExecution";
-@@ -118,6 +122,7 @@ export class ConstructionExecution implements Execution {
+@@ -118,6 +123,7 @@ export class ConstructionExecution implements Execution {
      const player = this.player;
      switch (this.constructionType) {
        case UnitType.AtomBomb:
@@ -1582,17 +1915,22 @@ index 99d0900..8a24fa1 100644
        case UnitType.HydrogenBomb: {
          const count = this.amount ?? 1;
          for (let i = 0; i < count; i++) {
-@@ -139,6 +144,9 @@ export class ConstructionExecution implements Execution {
+@@ -139,6 +145,14 @@ export class ConstructionExecution implements Execution {
        case UnitType.MIRV:
          this.mg.addExecution(new MirvExecution(player, this.tile));
          break;
 +      case UnitType.Tank:
 +        this.mg.addExecution(new TankExecution(player, this.tile));
 +        break;
++      case UnitType.PirateShip:
++        this.mg.addExecution(
++          new PirateExecution({ owner: player, tile: this.tile }),
++        );
++        break;
        case UnitType.Warship:
          this.mg.addExecution(
            new WarshipExecution({ owner: player, patrolTile: this.tile }),
-@@ -164,6 +172,20 @@ export class ConstructionExecution implements Execution {
+@@ -164,6 +178,20 @@ export class ConstructionExecution implements Execution {
        case UnitType.Factory:
          this.mg.addExecution(new FactoryExecution(this.structure!));
          break;
@@ -1613,7 +1951,7 @@ index 99d0900..8a24fa1 100644
        default:
          console.warn(
            `unit type ${this.constructionType} cannot be constructed`,
-@@ -180,6 +202,11 @@ export class ConstructionExecution implements Execution {
+@@ -180,6 +208,11 @@ export class ConstructionExecution implements Execution {
        case UnitType.SAMLauncher:
        case UnitType.City:
        case UnitType.Factory:
@@ -2098,6 +2436,295 @@ index 7d2222e..b59e640 100644
          // treatAFKFriendly matches warship targeting: a disconnected
          // teammate's or ally's units are still not kills.
          const friendly = this.player.isFriendly(unit.owner(), true);
+diff --git a/packages/engine/src/execution/PirateExecution.ts b/packages/engine/src/execution/PirateExecution.ts
+new file mode 100644
+index 0000000..b40be49
+--- /dev/null
++++ b/packages/engine/src/execution/PirateExecution.ts
+@@ -0,0 +1,283 @@
++import { TileRef } from "@openfront/engine-api/game/GameMap";
++import { UnitType } from "@openfront/engine-api/game/GameTypes";
++import {
++  zInt,
++  zNum,
++  zPlayerRef,
++  zRef,
++  zTile,
++} from "@openfront/engine-lib/snapshot/SnapshotType";
++import { z } from "zod";
++import { Execution, Game, Player, Unit } from "../game/Game";
++import { WaterPathFinder } from "../pathfinding/PathFinder";
++import { PathStatus } from "../pathfinding/types";
++import {
++  restoreWaterPathFinder,
++  WaterPathFinderSchema,
++  waterPathFinderState,
++} from "../snapshot/PathfinderSnapshots";
++import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
++import type {
++  ExecRecord,
++  SnapshotReader,
++  SnapshotWriter,
++} from "../snapshot/SnapshotContext";
++
++/** 약탈선 가격: 2M 고정 */
++export const PIRATE_COST = 2_000_000;
++/** 군함(틱당 1칸)의 1.8배 속도 */
++export const PIRATE_SPEED_MULTIPLIER = 1.8;
++/** 무역선을 찾는 범위 (타일) */
++export const PIRATE_SEARCH_RANGE = 250;
++/** 훔치는 돈 = 이 거리(타일)만큼 항해한 무역선이 주는 돈 */
++export const PIRATE_LOOT_TRADE_DISTANCE = 150;
++/** 무역선을 나포하는 거리 / 항구에 하역하는 거리 (맨해튼 타일) */
++const STEAL_RANGE = 5;
++const UNLOAD_RANGE = 3;
++
++/**
++ * 약탈선: 적 무역선을 찾아가 돈을 훔치고(무역선은 사라진다), 우리 항구로 돌아와 하역한다.
++ * - 속도는 군함의 1.8배. 이동 중 같은 나라/동맹의 무역선과 "해안가에서 안전한" 무역선은 노리지 않는다.
++ * - 돈은 항구에 도착해야 들어온다. 도착 전에 침몰하면 훔친 돈도 사라진다.
++ */
++export class PirateExecution implements Execution {
++  private active = true;
++  private mg: Game;
++  private pirate: Unit | null = null;
++  private pathfinder: WaterPathFinder;
++  private target: Unit | null = null;
++  private loot = 0;
++  private moveBudget = 0;
++
++  constructor(private input: { owner: Player; tile: TileRef } | Unit) {}
++
++  init(mg: Game, ticks: number): void {
++    this.mg = mg;
++    this.pathfinder = new WaterPathFinder(mg);
++    if (
++      this.input instanceof Object &&
++      "owner" in this.input &&
++      !("type" in this.input)
++    ) {
++      const { owner, tile } = this.input as { owner: Player; tile: TileRef };
++      const spawn = owner.canBuild(UnitType.PirateShip, tile);
++      if (spawn === false) {
++        console.warn("cannot build Pirate Ship");
++        this.active = false;
++        return;
++      }
++      this.pirate = owner.buildUnit(UnitType.PirateShip, spawn, {});
++    } else {
++      this.pirate = this.input as Unit;
++    }
++  }
++
++  tick(ticks: number): void {
++    const ship = this.pirate;
++    if (ship === null || !ship.isActive()) {
++      this.active = false;
++      return;
++    }
++    this.moveBudget += PIRATE_SPEED_MULTIPLIER;
++    while (this.moveBudget >= 1) {
++      this.moveBudget -= 1;
++      this.step(ship);
++    }
++  }
++
++  private step(ship: Unit): void {
++    if (this.loot > 0) {
++      this.sailHome(ship);
++    } else {
++      this.hunt(ship);
++    }
++  }
++
++  /** 노릴 만한 가장 가까운 무역선 */
++  private findTarget(ship: Unit): Unit | null {
++    const me = ship.owner();
++    let best: Unit | null = null;
++    let bestD = Infinity;
++    for (const { unit, distSquared } of this.mg.nearbyUnits(
++      ship.tile(),
++      PIRATE_SEARCH_RANGE,
++      [UnitType.TradeShip],
++    )) {
++      if (!unit.isActive() || unit.owner() === me) continue;
++      if (me.isFriendly(unit.owner())) continue;
++      if (unit.isSafeFromPirates()) continue;
++      if (distSquared < bestD) {
++        bestD = distSquared;
++        best = unit;
++      }
++    }
++    return best;
++  }
++
++  private hunt(ship: Unit): void {
++    if (
++      this.target === null ||
++      !this.target.isActive() ||
++      this.target.isSafeFromPirates() ||
++      this.target.owner() === ship.owner()
++    ) {
++      this.target = this.findTarget(ship);
++      ship.setTargetUnit(this.target ?? undefined);
++    }
++    const target = this.target;
++    if (target === null) return; // 노릴 무역선이 없으면 제자리에서 기다린다
++    const dist = this.mg.manhattanDist(ship.tile(), target.tile());
++    if (dist <= STEAL_RANGE) {
++      this.steal(ship, target);
++      return;
++    }
++    this.moveToward(ship, target.tile());
++  }
++
++  private steal(ship: Unit, target: Unit): void {
++    const victim = target.owner();
++    this.loot = Number(
++      this.mg.config().tradeShipGold(PIRATE_LOOT_TRADE_DISTANCE, ship.owner()),
++    );
++    target.delete(false); // 무역선은 털리고 사라진다
++    this.target = null;
++    ship.setTargetUnit(undefined);
++    ship.touch();
++    void victim;
++  }
++
++  private ownPortNear(ship: Unit): Unit | null {
++    const component = this.mg.getWaterComponent(ship.tile());
++    let best: Unit | null = null;
++    let bestD = Infinity;
++    for (const port of ship.owner().units(UnitType.Port)) {
++      if (!port.isActive() || port.isUnderConstruction()) continue;
++      if (
++        component === null ||
++        !this.mg.hasWaterComponent(port.tile(), component)
++      ) {
++        continue;
++      }
++      const d = this.mg.manhattanDist(ship.tile(), port.tile());
++      if (d < bestD) {
++        bestD = d;
++        best = port;
++      }
++    }
++    return best;
++  }
++
++  private sailHome(ship: Unit): void {
++    const port = this.ownPortNear(ship);
++    if (port === null) {
++      // 돌아갈 항구가 없으면 훔친 돈을 바로 국고로 (바다에 버리지 않는다)
++      this.unload(ship, ship.tile());
++      return;
++    }
++    if (this.mg.manhattanDist(ship.tile(), port.tile()) <= UNLOAD_RANGE) {
++      this.unload(ship, port.tile());
++      return;
++    }
++    this.moveToward(ship, port.tile());
++  }
++
++  private unload(ship: Unit, at: TileRef): void {
++    const gold = BigInt(Math.floor(this.loot));
++    this.loot = 0;
++    ship.owner().addGold(gold, at);
++    ship.owner().addPiracyGold(gold);
++  }
++
++  /** 가까우면 직접 가장 가까운 물 칸으로, 멀면 물길 찾기로 한 칸 이동 */
++  private moveToward(ship: Unit, dst: TileRef): void {
++    const here = ship.tile();
++    if (this.mg.manhattanDist(here, dst) <= 20) {
++      let best: TileRef | undefined;
++      let bestD = this.mg.manhattanDist(here, dst);
++      for (const n of this.mg.neighbors(here)) {
++        if (!this.mg.isWater(n)) continue;
++        const d = this.mg.manhattanDist(n, dst);
++        if (d < bestD) {
++          bestD = d;
++          best = n;
++        }
++      }
++      if (best !== undefined) {
++        ship.move(best);
++        return;
++      }
++    }
++    const result = this.pathfinder.next(here, dst, STEAL_RANGE);
++    if (result.status === PathStatus.NEXT) {
++      ship.move(result.node);
++    }
++  }
++
++  isActive(): boolean {
++    return this.active;
++  }
++
++  activeDuringSpawnPhase(): boolean {
++    return false;
++  }
++
++  snapshot(w: SnapshotWriter): ExecRecord {
++    const input = this.input;
++    const isUnitInput = "type" in input;
++    return PirateExecutionSnapshot.write({
++      active: this.active,
++      initialized: this.mg !== undefined,
++      owner: isUnitInput ? null : w.player((input as { owner: Player }).owner),
++      tile: isUnitInput ? 0 : (input as { tile: TileRef }).tile,
++      pirate: this.pirate === null ? null : w.unit(this.pirate),
++      pathfinder:
++        this.pathfinder === undefined
++          ? null
++          : waterPathFinderState(this.pathfinder),
++      target: this.target === null ? null : w.unit(this.target),
++      loot: this.loot,
++      moveBudget: this.moveBudget,
++    });
++  }
++
++  restoreSnapshot(s: PirateState, r: SnapshotReader): void {
++    this.active = s.active;
++    if (s.initialized) this.mg = r.game;
++    this.pirate = s.pirate === null ? null : r.unit(s.pirate);
++    // 생성자에 들어온 입력의 모양(유닛 또는 {나라, 타일})을 그대로 되살린다.
++    if (s.owner !== null) {
++      this.input = { owner: r.player(s.owner), tile: s.tile };
++    } else if (this.pirate !== null) {
++      this.input = this.pirate;
++    }
++    if (s.pathfinder !== null) {
++      this.pathfinder = restoreWaterPathFinder(r.game, s.pathfinder);
++    }
++    this.target = s.target === null ? null : r.unit(s.target);
++    this.loot = s.loot;
++    this.moveBudget = s.moveBudget;
++  }
++}
++
++const PirateStateSchema = z.object({
++  active: z.boolean(),
++  initialized: z.boolean(),
++  owner: zPlayerRef().nullable(),
++  tile: zTile(),
++  pirate: zRef().nullable(),
++  pathfinder: WaterPathFinderSchema.nullable(),
++  target: zRef().nullable(),
++  loot: zNum(),
++  moveBudget: zNum(),
++});
++type PirateState = z.infer<typeof PirateStateSchema>;
++
++export const PirateExecutionSnapshot = execSnapshotType({
++  name: "Pirate",
++  version: 1,
++  schema: PirateStateSchema,
++  cls: () => PirateExecution,
++});
++
++// zInt는 다른 실행과 같은 스키마 도우미 (사용하지 않으면 린트가 불평하므로 참조만 둔다)
++void zInt;
 diff --git a/packages/engine/src/execution/PlayerExecution.ts b/packages/engine/src/execution/PlayerExecution.ts
 index 49abd0c..0273b43 100644
 --- a/packages/engine/src/execution/PlayerExecution.ts
@@ -2386,12 +3013,48 @@ index 0000000..a1b86f2
 +  schema: TankStateSchema,
 +  cls: () => TankExecution,
 +});
+diff --git a/packages/engine/src/execution/nation/NationAllianceBehavior.ts b/packages/engine/src/execution/nation/NationAllianceBehavior.ts
+index a81a3f3..ad5bbfa 100644
+--- a/packages/engine/src/execution/nation/NationAllianceBehavior.ts
++++ b/packages/engine/src/execution/nation/NationAllianceBehavior.ts
+@@ -123,6 +123,15 @@ export class NationAllianceBehavior {
+     if (this.isConfused()) {
+       return this.random.chance(2);
+     }
++    // 붕괴 모드: 사람이 내미는 동맹은 대부분(85%) 받아 준다 (배신자 제외)
++    if (
++      this.game.config().collapseMode() &&
++      otherPlayer.type() === PlayerType.Human &&
++      !otherPlayer.isTraitor() &&
++      this.random.nextInt(0, 100) < 85
++    ) {
++      return true;
++    }
+     // Nearly always reject traitors
+     if (otherPlayer.isTraitor() && this.random.nextInt(0, 100) >= 10) {
+       if (isResponse && this.random.chance(3)) {
+diff --git a/packages/engine/src/execution/nation/NationAttackBehavior.ts b/packages/engine/src/execution/nation/NationAttackBehavior.ts
+index fb2f71c..c794f2a 100644
+--- a/packages/engine/src/execution/nation/NationAttackBehavior.ts
++++ b/packages/engine/src/execution/nation/NationAttackBehavior.ts
+@@ -1077,6 +1077,11 @@ export class NationAttackBehavior extends AiAttackBehavior {
+       return true;
+     }
+ 
++    // 붕괴 모드: 국가 AI는 사람에게 평소보다 훨씬 친화적이라 12번에 한 번만 공격한다
++    if (this.game.config().collapseMode()) {
++      return this.random.nextInt(0, 12) === 0;
++    }
++
+     // Prevent attacking of humans on lower difficulties
+     const { difficulty } = this.game.config().gameConfig();
+     if (difficulty === Difficulty.Easy && this.random.nextInt(0, 4) !== 0) {
 diff --git a/packages/engine/src/execution/nation/NationModBehavior.ts b/packages/engine/src/execution/nation/NationModBehavior.ts
 new file mode 100644
-index 0000000..103103c
+index 0000000..196a6a9
 --- /dev/null
 +++ b/packages/engine/src/execution/nation/NationModBehavior.ts
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,298 @@
 +import { TileRef } from "@openfront/engine-api/game/GameMap";
 +import { UnitType } from "@openfront/engine-api/game/GameTypes";
 +import {
@@ -2610,7 +3273,16 @@ index 0000000..103103c
 +    if (this.count(UnitType.Bunker) < 1 && gold >= cost(UnitType.Bunker) * 2n) {
 +      if (this.place(UnitType.Bunker)) return;
 +    }
-+    // 3) 전쟁 중이면 탱크 (최대 2대)
++    // 2.5) 약탈선: 항구가 있으면 최대 2척 (바다 위, 항구 근처)
++    if (
++      this.count(UnitType.PirateShip) < 2 &&
++      this.count(UnitType.Port) > 0 &&
++      gold >= cost(UnitType.PirateShip) * 3n &&
++      this.placeAtSea(UnitType.PirateShip)
++    ) {
++      return;
++    }
++    // 3) 전쟁 중이면 탱크 (최대 TANK_LIMIT대)
 +    if (
 +      this.count(UnitType.Tank) < TANK_LIMIT &&
 +      this.player.outgoingAttacks().length > 0 &&
@@ -2647,6 +3319,34 @@ index 0000000..103103c
 +    return false;
 +  }
 +
++  /** 우리 항구 근처 바다에서 지을 수 있는 칸을 찾아 짓는다 (군함·약탈선용). */
++  private placeAtSea(type: UnitType): boolean {
++    const map = this.mg;
++    for (const port of this.player.units(UnitType.Port)) {
++      if (!port.isActive() || port.isUnderConstruction()) continue;
++      const px = map.x(port.tile());
++      const py = map.y(port.tile());
++      for (let r = 2; r <= 8; r += 2) {
++        for (let dy = -r; dy <= r; dy += 2) {
++          for (let dx = -r; dx <= r; dx += 2) {
++            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
++            const x = px + dx;
++            const y = py + dy;
++            if (!map.isValidCoord(x, y)) continue;
++            const tile = map.ref(x, y);
++            if (!map.isWater(tile)) continue;
++            if (this.player.canBuild(type, tile) === false) continue;
++            this.mg.addExecution(
++              new ConstructionExecution(this.player, type, tile),
++            );
++            return true;
++          }
++        }
++      }
++    }
++    return false;
++  }
++
 +  private anchorTile(): TileRef | null {
 +    const city = this.player.units(UnitType.City)[0];
 +    if (city !== undefined) return city.tile();
@@ -2654,7 +3354,7 @@ index 0000000..103103c
 +  }
 +}
 diff --git a/packages/engine/src/game/Game.ts b/packages/engine/src/game/Game.ts
-index 577eb2a..6982074 100644
+index 577eb2a..8548e10 100644
 --- a/packages/engine/src/game/Game.ts
 +++ b/packages/engine/src/game/Game.ts
 @@ -80,6 +80,11 @@ export interface UnitParamsMap {
@@ -2669,7 +3369,7 @@ index 577eb2a..6982074 100644
    [UnitType.HydrogenBomb]: {
      targetTile?: number;
      trajectory: TileRef[];
-@@ -112,6 +117,24 @@ export interface UnitParamsMap {
+@@ -112,6 +117,26 @@ export interface UnitParamsMap {
  
    [UnitType.DefensePost]: Record<string, never>;
  
@@ -2691,10 +3391,12 @@ index 577eb2a..6982074 100644
 +
 +  [UnitType.Town]: Record<string, never>;
 +
++  [UnitType.PirateShip]: Record<string, never>;
++
    [UnitType.SAMLauncher]: Record<string, never>;
  
    [UnitType.City]: Record<string, never>;
-@@ -494,6 +517,11 @@ export interface Player extends PlayerLike {
+@@ -494,6 +519,11 @@ export interface Player extends PlayerLike {
      sourceTile: TileRef | null,
      border: Set<number>,
    ): Attack;
@@ -2706,7 +3408,7 @@ index 577eb2a..6982074 100644
    outgoingAttacks(): Attack[];
    incomingAttacks(): Attack[];
    orderRetreat(attackID: string): void;
-@@ -660,6 +688,10 @@ export interface Game extends GameLike {
+@@ -660,6 +690,10 @@ export interface Game extends GameLike {
    structureVersion(): number;
    /** MIRVs launched so far by anyone; each one raises the next one's price. */
    mirvsLaunched(): number;
@@ -2805,7 +3507,7 @@ index 45d81ff..b5d086b 100644
      "outgoingAllianceRequests",
      stringArrayEqual(
 diff --git a/packages/engine/src/game/PlayerImpl.ts b/packages/engine/src/game/PlayerImpl.ts
-index 3704dff..0c03dfd 100644
+index 3704dff..f9d94b9 100644
 --- a/packages/engine/src/game/PlayerImpl.ts
 +++ b/packages/engine/src/game/PlayerImpl.ts
 @@ -1,3 +1,8 @@
@@ -2871,7 +3573,15 @@ index 3704dff..0c03dfd 100644
        case UnitType.HydrogenBomb:
          return this.nukeSpawn(targetTile, unitType);
        case UnitType.MIRVWarhead:
-@@ -1625,11 +1656,25 @@ export class PlayerImpl implements Player {
+@@ -1615,6 +1646,7 @@ export class PlayerImpl implements Player {
+       case UnitType.Port:
+         return this.portSpawn(targetTile, validTiles);
+       case UnitType.Warship:
++      case UnitType.PirateShip:
+         return this.warshipSpawn(targetTile);
+       case UnitType.Shell:
+       case UnitType.SAMMissile:
+@@ -1625,11 +1657,25 @@ export class PlayerImpl implements Player {
          return this.tradeShipSpawn(targetTile);
        case UnitType.Train:
          return this.landBasedUnitSpawn(targetTile);
@@ -2897,7 +3607,7 @@ index 3704dff..0c03dfd 100644
          return this.landBasedStructureSpawn(targetTile, validTiles);
        default:
          assertNever(unitType);
-@@ -2034,6 +2079,7 @@ export class PlayerImpl implements Player {
+@@ -2034,6 +2080,7 @@ export class PlayerImpl implements Player {
        numUnitsConstructed: Object.entries(this.numUnitsConstructed).map(
          ([type, n]) => [type as UnitType, n],
        ),
@@ -2905,7 +3615,7 @@ index 3704dff..0c03dfd 100644
      };
    }
  
-@@ -2107,6 +2153,7 @@ export class PlayerImpl implements Player {
+@@ -2107,6 +2154,7 @@ export class PlayerImpl implements Player {
          }
        : (box as null);
      this.numUnitsConstructed = Object.fromEntries(s.numUnitsConstructed);
@@ -2913,7 +3623,7 @@ index 3704dff..0c03dfd 100644
      this.nearbyMemo = null;
    }
  }
-@@ -2177,6 +2224,8 @@ export const PlayerSnapshot = snapshotType({
+@@ -2177,6 +2225,8 @@ export const PlayerSnapshot = snapshotType({
        .nullable()
        .optional(),
      numUnitsConstructed: z.array(z.tuple([UnitTypeSchema, zInt()])),
@@ -2966,16 +3676,18 @@ index 20d9b33..8132076 100644
            this.mg.stats().unitLose(this.owner(), this._type);
            break;
 diff --git a/packages/engine/src/snapshot/ExecutionRegistry.ts b/packages/engine/src/snapshot/ExecutionRegistry.ts
-index aab89b2..ea43981 100644
+index aab89b2..a38a038 100644
 --- a/packages/engine/src/snapshot/ExecutionRegistry.ts
 +++ b/packages/engine/src/snapshot/ExecutionRegistry.ts
-@@ -15,6 +15,14 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
+@@ -15,6 +15,16 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
  import { EmbargoAllExecutionSnapshot } from "../execution/EmbargoAllExecution";
  import { EmbargoExecutionSnapshot } from "../execution/EmbargoExecution";
  import { EmojiExecutionSnapshot } from "../execution/EmojiExecution";
 +import { AirliftExecutionSnapshot } from "../execution/AirliftExecution";
 +import { TankExecutionSnapshot } from "../execution/TankExecution";
 +import { ModEquipExecutionSnapshot } from "../execution/ModEquipExecution";
++import { CollapseExecutionSnapshot } from "../execution/CollapseExecution";
++import { PirateExecutionSnapshot } from "../execution/PirateExecution";
 +import { ModUpgradeExecutionSnapshot } from "../execution/ModUpgradeExecution";
 +import { CivilAirportExecutionSnapshot } from "../execution/CivilAirportExecution";
 +import { BioZoneExecutionSnapshot } from "../execution/BioZoneExecution";
@@ -2984,7 +3696,7 @@ index aab89b2..ea43981 100644
  import { FactoryExecutionSnapshot } from "../execution/FactoryExecution";
  import { MarkDisconnectedExecutionSnapshot } from "../execution/MarkDisconnectedExecution";
  import { MirvExecutionSnapshot } from "../execution/MIRVExecution";
-@@ -70,6 +78,14 @@ export const EXECUTION_SNAPSHOT_TYPES = [
+@@ -70,6 +80,16 @@ export const EXECUTION_SNAPSHOT_TYPES = [
    EmbargoExecutionSnapshot,
    EmojiExecutionSnapshot,
    FactoryExecutionSnapshot,
@@ -2993,6 +3705,8 @@ index aab89b2..ea43981 100644
 +  BioZoneExecutionSnapshot,
 +  CivilAirportExecutionSnapshot,
 +  ModUpgradeExecutionSnapshot,
++  PirateExecutionSnapshot,
++  CollapseExecutionSnapshot,
 +  ModEquipExecutionSnapshot,
 +  TankExecutionSnapshot,
 +  AirliftExecutionSnapshot,
@@ -3259,22 +3973,23 @@ zg+yrHHy>3WnSV#jjq?|XRo-1924#$Ycf3J+sS@ihV5q+|m}<HF0xMSUE^re6A5)(G
 aCH|pvp!F|yJ)x711u#Zh7!dW`e)|tDcO}*U
 
 diff --git a/resources/atlases/unit-atlas.png b/resources/atlases/unit-atlas.png
-index 93df24b3211d4f431bf369aff54b45ff5662c934..199c362de43645cd777e7020419b4f7c010a50f5 100644
+index 93df24b3211d4f431bf369aff54b45ff5662c934..51f877a98e2c383e689abe6292fb5f4c1753886f 100644
 GIT binary patch
-literal 629
-zcmV-*0*d{KP)<h;3K|Lk000e1NJLTq006cC000dL1^@s61pSn<0006!Nkl<Zc%1E-
-z!ENg>3_$6RKZl3#5IT8=9((zKM({x+80e+P&Y+Wq@DN@^y_ES3P0FI<#{Z*wfPp9x
-z6*YQRDH@=m5<<vV&!M5?oKx4Qd*(zWVvKnl$IIt|lw_W!>7SYBPscfzz4tKBGo+L@
-z>+<`GNyQj%^33ym*FIZvNmNbHy&XD)kel4+BJH}8s8*i7NL*^fdw+YqCwHx2mfaWo
-z{(1jU$9sEy5n~(2K&k24qZ1{$X`I&o*Iuv%D(xOrYN@S(0@m!Vv^@+%@$<%Wk))<=
-z$v@{@=5e$?jS<Dh{KX=7j4|`HLW4@&_r3VOL<k`d!vJ{I%862Qxi#KiUv9fIeO<#d
-zZkSB4#92417-PokJ7T!hrT5WEym)`S@Ne9RjRRmn&5wan18j3<tslT&skz)zye7<^
-zNL*$~ZfOimNu<=IG#ASahgbzY0<NP~?%MyPkH(asPVRxuZVr!Mxk~ZG$r;D7LutMD
-zYK~0%0RXJ)3Vq+hx~_K<lj5go>MRFAWLcIwnU`hR^x<Q3nR#3LP8`RYgLhr`?Kyi&
-zsdLU{>%pv6s7GT;pp)8n@Ea+mr2n8teuSFR9qz``U5%41jX?!02_)s%TxuH6`%{^D
-zD$)**kE7+-0QCpR(&nok9*>k<ETuZ_(69$ewI>(<yd<>*&9NKjgMMj6gqo^|)&{uf
-z0SzztSxS9Y&a7jXVjIV>*0HsGoA2D0FH(E**sxGK{GRb(=SR?L-TyD2r|Y~B3$;5B
-P00000NkvXXu0mjf%&0nf
+literal 687
+zcmV;g0#N;lP)<h;3K|Lk000e1NJLTq006@P000dL1^@s66rI{`0007ZNkl<Zc%1E-
+z!EJ;v5JiV5bx;IF_~aUL%q5ab;NTLF_L5_2@QETQf<~N6CYha`F&@|~k>W3*UBF`-
+z{GagvK$EH%V?MhNO}d<OyT(V0dp_2k<4P%I?|pZ6KTsS1x<8KNpXuj+mvb(M5C8!3
+zJkQnRf*?q~I|YW6(zn5;X}a3KHyG0Fu9<r4Nf2Yq4T$?nnx!q~wzf6TbEg6E^c#(q
+z#6h6H{Jf^x<%?EMI*!NQ-apjM(st9f(3ByB?~NYciqrNjqJC3h*wa9bkx>)?X<rkX
+zv1S&h`@=94&o@0*6a=ag5YD;G<7j!!vni!q@+O`WVZim61&EYV=1U$;)cAehi^nC!
+z81pa;fLpDh5d;o|rpxOKTwY&p{@3UckYyrEoOOaj6ImuXOAH60bR0cNpCGh6Zu}Z+
+z`<_zDH!zUIM66t^h%R}w4$yJ{KOk@*q<G7chl&Fr0U_0a%Od=(?TZCcl-1OGgyU!h
+zqV|b>G^Ql#$t_XOmO${{cYM1^pudur972F;nyQi+?|p|x4<V>YFf9iFu&yigeGlup
+zUR{h7KaOK(Nrq9&vRnbMEXz$9UN;AT?`v&hJ=P?<>$+c0$}w@YCa1L~JQ`CHdQxkH
+z!-v->`KWXc)El$s#?`zgMOvlV123>tNA0UlDQDmy(0E>+0>GC^?TylLX*mPHk2gyG
+z!>5HdVeiR#A3mtk+a!SNo3aH|?d)4xuJCwmsU+nK4Tk$j0-_cKj4PF|U0xwjrwl3w
+z!UBR-_x#RKif!5_>vsmt;H4)-2?!c@`oRA6FVIvCg!5He{%8>GiD_bL-y;5(J^@3q
+V6CupE#q0n8002ovPDHLkV1o1IJ}dwL
 
 literal 595
 zcmV-Z0<8UsP)<h;3K|Lk000e1NJLTq005i-000dL1^@s6T!IIy00001b5ch_0olnc
@@ -3325,6 +4040,13 @@ index 0000000..df38f56
 +++ b/resources/images/CivilAirportIconWhite.svg
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><rect x="24" y="16" width="16" height="6"/></g></mask><g fill="#fff" mask="url(#m)"><rect x="26" y="26" width="12" height="30"/><polygon points="18.0,14.0 46.0,14.0 50.0,26.0 14.0,26.0"/><rect x="22" y="18" width="20" height="6"/><rect x="12" y="52" width="40" height="6"/><polygon points="57.3,12.0 55.6,12.8 51.7,12.8 47.8,18.7 46.4,18.7 48.3,12.8 45.0,12.8 43.3,14.5 42.4,14.5 43.0,12.0 42.4,9.5 43.3,9.5 45.0,11.2 48.3,11.2 46.4,5.3 47.8,5.3 51.7,11.2 55.6,11.2"/></g></svg>
+diff --git a/resources/images/CollapseIconWhite.svg b/resources/images/CollapseIconWhite.svg
+new file mode 100644
+index 0000000..45847da
+--- /dev/null
++++ b/resources/images/CollapseIconWhite.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><polygon points="34.0,10.0 28.0,30.0 38.0,38.0 30.0,56.0 36.0,56.0 44.0,38.0 34.0,28.0 40.0,10.0"/></g></mask><g fill="#fff" mask="url(#m)"><polygon points="6.0,48.0 6.0,22.0 18.0,34.0 32.0,12.0 46.0,34.0 58.0,22.0 58.0,48.0"/><rect x="6" y="50" width="52" height="8"/></g></svg>
 diff --git a/resources/images/FighterIconWhite.svg b/resources/images/FighterIconWhite.svg
 new file mode 100644
 index 0000000..5bf6279
@@ -3339,6 +4061,13 @@ index 0000000..2c6fc38
 +++ b/resources/images/MetropolisIconWhite.svg
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><rect x="10" y="34" width="3" height="4"/><rect x="14" y="34" width="3" height="4"/><rect x="10" y="42" width="3" height="4"/><rect x="14" y="42" width="3" height="4"/><rect x="26" y="18" width="4" height="5"/><rect x="32" y="18" width="4" height="5"/><rect x="26" y="28" width="4" height="5"/><rect x="32" y="28" width="4" height="5"/><rect x="26" y="38" width="4" height="5"/><rect x="32" y="38" width="4" height="5"/><rect x="46" y="28" width="4" height="5"/><rect x="52" y="28" width="4" height="5"/><rect x="46" y="38" width="4" height="5"/><rect x="52" y="38" width="4" height="5"/></g></mask><g fill="#fff" mask="url(#m)"><rect x="6" y="30" width="14" height="28"/><rect x="22" y="12" width="18" height="46"/><rect x="42" y="24" width="16" height="34"/><rect x="30" y="4" width="2" height="10"/><rect x="2" y="56" width="60" height="4"/></g></svg>
+diff --git a/resources/images/PirateShipIconWhite.svg b/resources/images/PirateShipIconWhite.svg
+new file mode 100644
+index 0000000..66c62b0
+--- /dev/null
++++ b/resources/images/PirateShipIconWhite.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><mask id="m"><rect width="64" height="64" fill="#fff"/><g fill="#000"><rect x="40" y="7" width="2" height="6"/><rect x="37" y="9" width="8" height="2"/></g></mask><g fill="#fff" mask="url(#m)"><polygon points="6.0,40.0 58.0,40.0 50.0,54.0 14.0,54.0"/><rect x="30" y="8" width="4" height="32"/><polygon points="34.0,12.0 34.0,36.0 54.0,36.0"/><polygon points="30.0,16.0 30.0,36.0 10.0,36.0"/><rect x="34" y="6" width="14" height="8"/><rect x="2" y="56" width="60" height="4"/></g></svg>
 diff --git a/resources/images/SkyportIconWhite.svg b/resources/images/SkyportIconWhite.svg
 new file mode 100644
 index 0000000..928f7eb
@@ -3368,10 +4097,10 @@ index 0000000..cb1c0d0
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><g fill="#fff"><polygon points="32.0,6.0 52.0,28.0 40.0,28.0 40.0,46.0 24.0,46.0 24.0,28.0 12.0,28.0"/><rect x="14" y="52" width="36" height="6"/></g></svg>
 diff --git a/resources/lang/en.json b/resources/lang/en.json
-index b0eca7f..aecc59a 100644
+index b0eca7f..cbbf175 100644
 --- a/resources/lang/en.json
 +++ b/resources/lang/en.json
-@@ -205,15 +205,22 @@
+@@ -205,15 +205,23 @@
    },
    "build_menu": {
      "desc": {
@@ -3387,6 +4116,7 @@ index b0eca7f..aecc59a 100644
 +      "metropolis": "Raises your max population like 4 cities. Upgradable",
        "mirv": "Huge explosion, only targets selected player",
        "missile_silo": "Used to launch nukes",
++      "pirate_ship": "Steals the gold of enemy trade ships and sails it home to your port. 1.8x warship speed, fragile",
        "port": "Sends trade ships to generate gold",
        "sam_launcher": "Defends against incoming nukes",
 +      "tank": "Moves to the front in wars; nearby attacks lose fewer troops and advance faster",
@@ -3394,7 +4124,27 @@ index b0eca7f..aecc59a 100644
        "warship": "Captures trade ships, destroys ships and boats"
      },
      "not_enough_money": "Not enough money",
-@@ -2221,6 +2228,152 @@
+@@ -928,6 +936,11 @@
+     "unknown": "The server closed the connection.",
+     "wrong_worker": "This connection reached the wrong server process. Please reload the page and try again."
+   },
++  "collapse_hud": {
++    "grace": "Grace period",
++    "rebels": "Rebels",
++    "survived": "Survived"
++  },
+   "common": {
+     "available": "Available",
+     "back": "Back",
+@@ -1415,6 +1428,7 @@
+     "instant_build": "Instant build",
+     "max_timer": "Game length (minutes)",
+     "mins_placeholder": "Mins",
++    "mod_collapse": "Collapse mode (survive the empire war)",
+     "nations": "Nations: ",
+     "options": "Options",
+     "overtime": "Overtime after (minutes)",
+@@ -2221,6 +2235,152 @@
      "title_clanwars": "Clan Wars Ranked Matchmaking (ALPHA)",
      "waiting_for_game": "Waiting for game to start..."
    },
@@ -3547,7 +4297,7 @@ index b0eca7f..aecc59a 100644
    "mode_selector": {
      "lobbies_unreachable": "Can't reach the public lobbies right now",
      "offline_lobbies": "Public lobbies aren't available while you're offline",
-@@ -3190,16 +3343,23 @@
+@@ -3190,16 +3350,24 @@
      "title": "Tutorial"
    },
    "unit_type": {
@@ -3564,6 +4314,7 @@ index b0eca7f..aecc59a 100644
 +    "metropolis": "Metropolis",
      "mirv": "MIRV",
      "missile_silo": "Missile Silo",
++    "pirate_ship": "Pirate Ship",
      "port": "Port",
      "sam_launcher": "SAM Launcher",
 +    "tank": "Tank",
@@ -3572,10 +4323,10 @@ index b0eca7f..aecc59a 100644
    },
    "update_available": {
 diff --git a/resources/lang/ko.json b/resources/lang/ko.json
-index 4ad2d5a..4614dd0 100644
+index 4ad2d5a..910154c 100644
 --- a/resources/lang/ko.json
 +++ b/resources/lang/ko.json
-@@ -183,7 +183,14 @@
+@@ -183,7 +183,15 @@
        "missile_silo": "핵 미사일 발사를 위해 사용됩니다",
        "port": "무역선을 보내 금을 생산합니다",
        "sam_launcher": "들어오는 핵미사일을 방어합니다",
@@ -3587,11 +4338,22 @@ index 4ad2d5a..4614dd0 100644
 +      "tank": "전쟁이 나면 전선으로 이동해요. 근처 전투에서 병력 손실이 줄고 더 빨리 전진해요",
 +      "civil_airport": "10초마다 비행기 무역으로 돈을 벌어요. 다른 나라 공항이 있으면 더 벌어요. 업그레이드 가능",
 +      "metropolis": "도시 4개만큼 인구 한도를 올려줘요. 업그레이드 가능",
-+      "town": "값싼 작은 정착지예요. 도시의 약 2/3만큼 인구 한도를 올려줘요. 업그레이드 가능"
++      "town": "값싼 작은 정착지예요. 도시의 약 2/3만큼 인구 한도를 올려줘요. 업그레이드 가능",
++      "pirate_ship": "적 무역선의 돈을 훔쳐 우리 항구로 가져와요. 군함의 1.8배 속도지만 약해요"
      },
      "not_enough_money": "돈이 부족합니다",
      "upgrade_amount": "x{amount}",
-@@ -1839,6 +1846,152 @@
+@@ -906,7 +914,8 @@
+     "start": "게임 시작",
+     "starting": "시작 중...",
+     "starting_gold": "시작 금 (M)",
+-    "water_nukes": "수몰 폭탄"
++    "water_nukes": "수몰 폭탄",
++    "mod_collapse": "붕괴 모드 (제국 버티기)"
+   },
+   "game_starting_modal": {
+     "code_license": "코드는 AGPL-3.0 라이선스에 따르며, 보증은 제공되지 않습니다.",
+@@ -1839,6 +1848,152 @@
      "delete_unit_title": "유닛 삭제",
      "upgrade_x": "업그레이드 x{amount}"
    },
@@ -3744,7 +4506,7 @@ index 4ad2d5a..4614dd0 100644
    "relation": {
      "default": "기본",
      "distrustful": "신뢰하지 않음",
-@@ -2196,7 +2349,14 @@
+@@ -2196,7 +2351,15 @@
      "missile_silo": "미사일 발사대",
      "port": "항구",
      "sam_launcher": "지대공 미사일 발사대",
@@ -3756,10 +4518,76 @@ index 4ad2d5a..4614dd0 100644
 +    "tank": "탱크",
 +    "civil_airport": "민간 공항",
 +    "metropolis": "대도시",
-+    "town": "마을"
++    "town": "마을",
++    "pirate_ship": "약탈선"
    },
    "update_available": {
      "desktop": "OpenFront의 새로운 버전을 이용할 수 있습니다. 백그라운드에서 다운로드되며, 준비가 완료되면 업데이트 표시줄에서 새로고침하세요.",
+@@ -2437,5 +2600,10 @@
+     "you_won": "나의 승리!",
+     "your_team": "우리팀이 승리했습니다!",
+     "youtube_tutorial": "도움이 필요하신가요?"
++  },
++  "collapse_hud": {
++    "grace": "보호 시간",
++    "survived": "버틴 시간",
++    "rebels": "반란 세력"
+   }
+ }
+diff --git a/src/client/HostLobbyModal.ts b/src/client/HostLobbyModal.ts
+index 54b8e96..b131640 100644
+--- a/src/client/HostLobbyModal.ts
++++ b/src/client/HostLobbyModal.ts
+@@ -115,6 +115,8 @@ export class HostLobbyModal extends BaseModal {
+   @state() private customAlliances: boolean = false;
+   @state() private customAllianceMinutes: number | undefined = undefined;
+   @state() private doomsdayClock: boolean = false;
++  // 새 모드 (게임 시작 전에 켜고 끈다)
++  @state() private modCollapse = false;
+   @state() private doomsdayClockSpeed: DoomsdayClockSpeed = "normal";
+   @state() private overtime: boolean = false;
+   @state() private overtimeStartMinutes: number | undefined = undefined;
+@@ -772,6 +774,10 @@ export class HostLobbyModal extends BaseModal {
+                     checked: this.doomsdayClock,
+                     doomsdayClockSpeed: this.doomsdayClockSpeed,
+                   },
++                  {
++                    labelKey: "game_settings.mod_collapse",
++                    checked: this.modCollapse,
++                  },
+                   // Host cheats and public listing are mutually exclusive
+                   // (the server rejects both combinations), so the controls
+                   // disappear while the lobby is listed.
+@@ -1121,6 +1127,7 @@ export class HostLobbyModal extends BaseModal {
+     this.customAlliances = false;
+     this.customAllianceMinutes = undefined;
+     this.doomsdayClock = false;
++    this.modCollapse = false;
+     this.doomsdayClockSpeed = "normal";
+     this.overtime = false;
+     this.overtimeStartMinutes = undefined;
+@@ -1236,6 +1243,12 @@ export class HostLobbyModal extends BaseModal {
+         this.doomsdayClock = checked;
+         void this.putGameConfig();
+         break;
++      case "game_settings.mod_collapse":
++        this.modCollapse = checked;
++        // 붕괴 모드는 인구 무한 설정을 쓰지 않는다
++        if (checked) this.infiniteTroops = false;
++        void this.putGameConfig();
++        break;
+       case "host_modal.host_cheats":
+         this.hostCheatsEnabled = checked;
+         void this.putGameConfig();
+@@ -1987,6 +2000,8 @@ export class HostLobbyModal extends BaseModal {
+             doomsdayClock: this.doomsdayClock
+               ? { enabled: true, speed: this.doomsdayClockSpeed }
+               : { enabled: false },
++            // 모드 스위치: 꺼졌을 때도 값을 보내야 서버가 이전 설정을 지운다
++            mods: { collapse: this.modCollapse },
+             // Same {enabled:false} rule as doomsdayClock above: undefined is
+             // dropped by JSON.stringify, so the toggle could never turn off.
+             overtime: this.overtime
 diff --git a/src/client/InputHandler.ts b/src/client/InputHandler.ts
 index 01f2a04..fea59dd 100644
 --- a/src/client/InputHandler.ts
@@ -3788,6 +4616,68 @@ index 01f2a04..fea59dd 100644
          if (
            this.keybindMatchesEvent(e, this.keybinds.coordinateGrid) &&
            !e.repeat
+diff --git a/src/client/SinglePlayerModal.ts b/src/client/SinglePlayerModal.ts
+index df86986..eb6833e 100644
+--- a/src/client/SinglePlayerModal.ts
++++ b/src/client/SinglePlayerModal.ts
+@@ -240,6 +240,8 @@ export class SinglePlayerModal extends BaseModal {
+     DEFAULT_OPTIONS.customAllianceMinutes;
+   @state() private waterNukes: boolean = DEFAULT_OPTIONS.waterNukes;
+   @state() private doomsdayClock: boolean = DEFAULT_OPTIONS.doomsdayClock;
++  // 새 모드 (게임 시작 전에 켜고 끈다)
++  @state() private modCollapse = false;
+   @state() private doomsdayClockSpeed: DoomsdayClockSpeed =
+     DEFAULT_OPTIONS.doomsdayClockSpeed;
+   @state() private overtime: boolean = DEFAULT_OPTIONS.overtime;
+@@ -620,6 +622,10 @@ export class SinglePlayerModal extends BaseModal {
+                     checked: this.doomsdayClock,
+                     doomsdayClockSpeed: this.doomsdayClockSpeed,
+                   },
++                  {
++                    labelKey: "game_settings.mod_collapse",
++                    checked: this.modCollapse,
++                  },
+                 ],
+                 inputCards,
+               },
+@@ -690,6 +696,7 @@ export class SinglePlayerModal extends BaseModal {
+       this.customAllianceMinutes !== DEFAULT_OPTIONS.customAllianceMinutes ||
+       this.waterNukes !== DEFAULT_OPTIONS.waterNukes ||
+       this.doomsdayClock !== DEFAULT_OPTIONS.doomsdayClock ||
++      this.modCollapse ||
+       // Pace only matters when the mode is on (startGame drops it when off).
+       (this.doomsdayClock &&
+         this.doomsdayClockSpeed !== DEFAULT_OPTIONS.doomsdayClockSpeed) ||
+@@ -821,6 +828,7 @@ export class SinglePlayerModal extends BaseModal {
+     this.customAllianceMinutes = DEFAULT_OPTIONS.customAllianceMinutes;
+     this.waterNukes = DEFAULT_OPTIONS.waterNukes;
+     this.doomsdayClock = DEFAULT_OPTIONS.doomsdayClock;
++    this.modCollapse = false;
+     this.doomsdayClockSpeed = DEFAULT_OPTIONS.doomsdayClockSpeed;
+     this.overtime = DEFAULT_OPTIONS.overtime;
+     this.overtimeStartMinutes = DEFAULT_OPTIONS.overtimeStartMinutes;
+@@ -1035,6 +1043,11 @@ export class SinglePlayerModal extends BaseModal {
+       case "game_settings.water_nukes":
+         this.waterNukes = checked;
+         break;
++      case "game_settings.mod_collapse":
++        this.modCollapse = checked;
++        // 붕괴 모드는 인구 무한 설정을 쓰지 않는다
++        if (checked) this.infiniteTroops = false;
++        break;
+       case "game_settings.doomsday_clock":
+         this.doomsdayClock = checked;
+         break;
+@@ -1366,6 +1379,9 @@ export class SinglePlayerModal extends BaseModal {
+               ? { customAllianceDuration: this.customAllianceMinutes ?? 0 }
+               : {}),
+             ...(this.waterNukes ? { waterNukes: true } : {}),
++            ...(this.modCollapse
++              ? { mods: { collapse: true }, infiniteTroops: false }
++              : {}),
+             ...(this.doomsdayClock
+               ? {
+                   doomsdayClock: {
 diff --git a/src/client/Transport.ts b/src/client/Transport.ts
 index 5f9e3d7..6a2b291 100644
 --- a/src/client/Transport.ts
@@ -3864,10 +4754,10 @@ index af06ea3..7790d59 100644
      buildCity: "Digit1",
      buildFactory: "Digit2",
 diff --git a/src/client/components/baseComponents/stats/PlayerStatsTable.ts b/src/client/components/baseComponents/stats/PlayerStatsTable.ts
-index 728a699..e181010 100644
+index 728a699..099bbf0 100644
 --- a/src/client/components/baseComponents/stats/PlayerStatsTable.ts
 +++ b/src/client/components/baseComponents/stats/PlayerStatsTable.ts
-@@ -21,6 +21,12 @@ const BUILDING_ORDER = {
+@@ -21,6 +21,13 @@ const BUILDING_ORDER = {
    defp: 4,
    silo: 5,
    saml: 6,
@@ -3877,10 +4767,11 @@ index 728a699..e181010 100644
 +  capt: 11,
 +  metr: 12,
 +  town: 13,
++  pirt: 14,
  } as const satisfies Record<
    Exclude<(typeof otherUnits)[number], "wshp">,
    number
-@@ -47,6 +53,13 @@ const UNIT_LABEL_KEYS = {
+@@ -47,6 +54,14 @@ const UNIT_LABEL_KEYS = {
    hbomb: "unit_type.hydrogen_bomb",
    mirv: "unit_type.mirv",
    mirvw: "player_stats_table.unit.mirvw",
@@ -3891,6 +4782,7 @@ index 728a699..e181010 100644
 +  capt: "unit_type.civil_airport",
 +  metr: "unit_type.metropolis",
 +  town: "unit_type.town",
++  pirt: "unit_type.pirate_ship",
    trade: "player_stats_table.unit.trade",
    trans: "player_stats_table.unit.trans",
  } as const satisfies Record<
@@ -3950,18 +4842,19 @@ index 2b727e7..22e0e2a 100644
            });
  
 diff --git a/src/client/hud/GameRenderer.ts b/src/client/hud/GameRenderer.ts
-index c0fe900..8028834 100644
+index c0fe900..74e2341 100644
 --- a/src/client/hud/GameRenderer.ts
 +++ b/src/client/hud/GameRenderer.ts
-@@ -43,6 +43,7 @@ import { OnboardingOverlay } from "./layers/OnboardingOverlay";
+@@ -43,6 +43,8 @@ import { OnboardingOverlay } from "./layers/OnboardingOverlay";
  import { PerformanceOverlay } from "./layers/PerformanceOverlay";
  import { PlayerInfoOverlay } from "./layers/PlayerInfoOverlay";
  import { PlayerPanel } from "./layers/PlayerPanel";
++import { CollapseHud } from "./layers/CollapseHud";
 +import { ModPanel } from "./layers/ModPanel";
  import { ReplayPanel } from "./layers/ReplayPanel";
  import { SettingsModal } from "./layers/SettingsModal";
  import { SpawnTimer } from "./layers/SpawnTimer";
-@@ -181,6 +182,13 @@ export function createRenderer(
+@@ -181,6 +183,19 @@ export function createRenderer(
    replayPanel.eventBus = eventBus;
    replayPanel.game = game;
  
@@ -3972,26 +4865,34 @@ index c0fe900..8028834 100644
 +  modPanel.eventBus = eventBus;
 +  modPanel.game = game;
 +
++  const collapseHud = document.querySelector("collapse-hud") as CollapseHud;
++  if (!(collapseHud instanceof CollapseHud)) {
++    console.error("collapse hud not found");
++  }
++  collapseHud.game = game;
++
    const gameRightSidebar = document.querySelector(
      "game-right-sidebar",
    ) as GameRightSidebar;
-@@ -377,6 +385,7 @@ export function createRenderer(
+@@ -377,6 +392,8 @@ export function createRenderer(
      winModal,
      newLobbyPrompt,
      replayPanel,
 +    modPanel,
++    collapseHud,
      settingsModal,
      playerPanel,
      headsUpMessage,
 diff --git a/src/client/hud/layers/BuildMenu.ts b/src/client/hud/layers/BuildMenu.ts
-index 617b33e..2e17223 100644
+index 617b33e..4e900f8 100644
 --- a/src/client/hud/layers/BuildMenu.ts
 +++ b/src/client/hud/layers/BuildMenu.ts
-@@ -29,6 +29,14 @@ import { GameView } from "../../view";
+@@ -29,6 +29,15 @@ import { GameView } from "../../view";
  const warshipIcon = assetUrl("images/BattleshipIconWhite.svg");
  const cityIcon = assetUrl("images/CityIconWhite.svg");
  const factoryIcon = assetUrl("images/FactoryIconWhite.svg");
 +// 모드 건물/유닛 전용 아이콘 (기존 건물과 모양이 겹치지 않게 따로 그림)
++const pirateIcon = assetUrl("images/PirateShipIconWhite.svg");
 +const metropolisIcon = assetUrl("images/MetropolisIconWhite.svg");
 +const townIcon = assetUrl("images/TownIconWhite.svg");
 +const bunkerIcon = assetUrl("images/BunkerIconWhite.svg");
@@ -4002,7 +4903,7 @@ index 617b33e..2e17223 100644
  const goldCoinIcon = assetUrl("images/GoldCoinIcon.svg");
  const mirvIcon = assetUrl("images/MIRVIcon.svg");
  const missileSiloIcon = assetUrl("images/MissileSiloIconWhite.svg");
-@@ -55,6 +63,13 @@ const buildTable: BuildItemDisplay[][] = [
+@@ -55,6 +64,13 @@ const buildTable: BuildItemDisplay[][] = [
        key: "unit_type.atom_bomb",
        countable: false,
      },
@@ -4016,7 +4917,21 @@ index 617b33e..2e17223 100644
      {
        unitType: UnitType.MIRV,
        icon: mirvIcon,
-@@ -104,6 +119,48 @@ const buildTable: BuildItemDisplay[][] = [
+@@ -76,6 +92,13 @@ const buildTable: BuildItemDisplay[][] = [
+       key: "unit_type.warship",
+       countable: true,
+     },
++    {
++      unitType: UnitType.PirateShip,
++      icon: pirateIcon,
++      description: "build_menu.desc.pirate_ship",
++      key: "unit_type.pirate_ship",
++      countable: true,
++    },
+     {
+       unitType: UnitType.Port,
+       icon: portIcon,
+@@ -104,6 +127,48 @@ const buildTable: BuildItemDisplay[][] = [
        key: "unit_type.defense_post",
        countable: true,
      },
@@ -4065,6 +4980,84 @@ index 617b33e..2e17223 100644
      {
        unitType: UnitType.City,
        icon: cityIcon,
+diff --git a/src/client/hud/layers/CollapseHud.ts b/src/client/hud/layers/CollapseHud.ts
+new file mode 100644
+index 0000000..65dd722
+--- /dev/null
++++ b/src/client/hud/layers/CollapseHud.ts
+@@ -0,0 +1,72 @@
++import { PlayerType } from "@openfront/engine-api/game/GameTypes";
++import { assetUrl } from "@openfront/shared/AssetUrls";
++import { html, LitElement } from "lit";
++import { customElement, state } from "lit/decorators.js";
++import { Controller } from "../../Controller";
++import { translateText } from "../../Utils";
++import { GameView } from "../../view";
++
++const ICON = assetUrl("images/CollapseIconWhite.svg");
++/** 붕괴 모드의 시작 보호 시간: 2분 (1초 = 10틱) */
++const GRACE_TICKS = 2 * 60 * 10;
++
++function mmss(ticks: number): string {
++  const total = Math.max(0, Math.floor(ticks / 10));
++  const m = Math.floor(total / 60);
++  const s = total % 60;
++  return `${m}:${s.toString().padStart(2, "0")}`;
++}
++
++/**
++ * 붕괴 모드 전용 작은 표시줄 (모바일에서도 화면 위쪽 가운데에 얹히는 알약 모양).
++ * 보호 시간 카운트다운 -> 버틴 시간과 작은 나라 수.
++ */
++@customElement("collapse-hud")
++export class CollapseHud extends LitElement implements Controller {
++  public game: GameView;
++
++  @state() private line = "";
++  @state() private danger = false;
++
++  createRenderRoot() {
++    return this;
++  }
++
++  init() {}
++
++  getTickIntervalMs() {
++    return 500;
++  }
++
++  tick() {
++    if (!this.game || !this.game.config().collapseMode()) {
++      this.line = "";
++      return;
++    }
++    const elapsed = this.game.ticksSinceStart(); // 스폰 단계는 0
++    if (elapsed < GRACE_TICKS) {
++      this.danger = false;
++      this.line = `${translateText("collapse_hud.grace")} ${mmss(GRACE_TICKS - elapsed)}`;
++      return;
++    }
++    const smalls = this.game
++      .players()
++      .filter((p) => p.type() === PlayerType.Bot && p.isAlive()).length;
++    this.danger = true;
++    this.line = `${translateText("collapse_hud.survived")} ${mmss(elapsed - GRACE_TICKS)} · ${translateText("collapse_hud.rebels")} ${smalls}`;
++  }
++
++  render() {
++    if (this.line === "") return html``;
++    return html`<div
++      class="fixed top-2 left-1/2 -translate-x-1/2 z-1000 pointer-events-none flex items-center gap-2 px-3 min-h-[36px] rounded-full text-white text-sm border ${
++        this.danger
++          ? "bg-red-900/80 border-red-400"
++          : "bg-gray-800/85 border-gray-400"
++      }"
++    >
++      <img src=${ICON} class="w-5 h-5" alt="" />
++      <span>${this.line}</span>
++    </div>`;
++  }
++}
 diff --git a/src/client/hud/layers/ModPanel.ts b/src/client/hud/layers/ModPanel.ts
 new file mode 100644
 index 0000000..5f5ee9b
@@ -4673,41 +5666,44 @@ index 6f0cb39..4643b47 100644
    private mapW: number;
  
 diff --git a/src/client/render/gl/passes/UnitPass.ts b/src/client/render/gl/passes/UnitPass.ts
-index 46ee415..1581154 100644
+index 46ee415..ca91fb5 100644
 --- a/src/client/render/gl/passes/UnitPass.ts
 +++ b/src/client/render/gl/passes/UnitPass.ts
-@@ -44,6 +44,8 @@ import {
+@@ -44,6 +44,9 @@ import {
    UT_MIRV_WARHEAD,
    UT_SAM_MISSILE,
    UT_SHELL,
 +  UT_AIRBORNE,
++  UT_PIRATE_SHIP,
 +  UT_TANK,
    UT_TRADE_SHIP,
    UT_TRAIN,
    UT_TRANSPORT,
-@@ -85,6 +87,8 @@ const UNIT_ORDER = [
+@@ -85,6 +88,9 @@ const UNIT_ORDER = [
    "TrainEngine",
    "TrainCarriage",
    "TrainCarriageLoaded",
 +  UT_TANK, // 모드: 탱크 (큰 점)
 +  UT_AIRBORNE, // 모드: 병사 수송기 (13번째 칸)
++  UT_PIRATE_SHIP, // 모드: 약탈선 (14번째 칸)
  ] as const;
  
  const ATLAS_COLS = UNIT_ORDER.length;
 diff --git a/src/client/render/types/UnitType.ts b/src/client/render/types/UnitType.ts
-index edf1d80..f409a23 100644
+index edf1d80..83666df 100644
 --- a/src/client/render/types/UnitType.ts
 +++ b/src/client/render/types/UnitType.ts
-@@ -21,6 +21,8 @@ export const UT_SAM_MISSILE = "SAMMissile" as const;
+@@ -21,6 +21,9 @@ export const UT_SAM_MISSILE = "SAMMissile" as const;
  export const UT_SHELL = "Shell" as const;
  export const UT_MIRV_WARHEAD = "MIRV Warhead" as const;
  export const UT_TRAIN = "Train" as const;
 +export const UT_TANK = "Tank" as const;
 +export const UT_AIRBORNE = "Airborne" as const;
++export const UT_PIRATE_SHIP = "Pirate Ship" as const;
  
  // Structures
  export const UT_CITY = "City" as const;
-@@ -29,6 +31,12 @@ export const UT_FACTORY = "Factory" as const;
+@@ -29,6 +32,12 @@ export const UT_FACTORY = "Factory" as const;
  export const UT_DEFENSE_POST = "Defense Post" as const;
  export const UT_SAM_LAUNCHER = "SAM Launcher" as const;
  export const UT_MISSILE_SILO = "Missile Silo" as const;
@@ -4720,7 +5716,7 @@ index edf1d80..f409a23 100644
  
  // ---------------------------------------------------------------------------
  // Derived sets
-@@ -41,6 +49,11 @@ export const STRUCTURE_TYPES: ReadonlySet<string> = new Set([
+@@ -41,6 +50,11 @@ export const STRUCTURE_TYPES: ReadonlySet<string> = new Set([
    UT_DEFENSE_POST,
    UT_SAM_LAUNCHER,
    UT_MISSILE_SILO,
@@ -4732,7 +5728,7 @@ index edf1d80..f409a23 100644
  ]);
  
  export const NUKE_TYPES: ReadonlySet<string> = new Set([
-@@ -62,6 +75,7 @@ export const SMOOTHED_NUKE_TYPES: ReadonlySet<string> = new Set([
+@@ -62,6 +76,7 @@ export const SMOOTHED_NUKE_TYPES: ReadonlySet<string> = new Set([
  /** Units that leave a trail on the map (TrailManager). */
  export const TRAIL_TYPES: ReadonlySet<string> = new Set([
    UT_TRANSPORT,
@@ -4740,7 +5736,7 @@ index edf1d80..f409a23 100644
    UT_ATOM_BOMB,
    UT_HYDROGEN_BOMB,
    UT_MIRV,
-@@ -99,4 +113,11 @@ export const ALL_UNIT_TYPES = [
+@@ -99,4 +114,12 @@ export const ALL_UNIT_TYPES = [
    UT_SAM_LAUNCHER,
    UT_MISSILE_SILO,
    UT_TRAIN,
@@ -4751,17 +5747,19 @@ index edf1d80..f409a23 100644
 +  UT_AIRBORNE,
 +  UT_METROPOLIS,
 +  UT_TOWN,
++  UT_PIRATE_SHIP,
  ] as const;
 diff --git a/src/client/render/types/index.ts b/src/client/render/types/index.ts
-index fbf9e5b..b3751ef 100644
+index fbf9e5b..2d5abc9 100644
 --- a/src/client/render/types/index.ts
 +++ b/src/client/render/types/index.ts
-@@ -54,6 +54,13 @@ export {
+@@ -54,6 +54,14 @@ export {
    UT_SHELL,
    UT_TRADE_SHIP,
    UT_TRAIN,
 +  UT_TANK,
 +  UT_AIRBORNE,
++  UT_PIRATE_SHIP,
 +  UT_BUNKER,
 +  UT_AIRFIELD,
 +  UT_CIVIL_AIRPORT,
@@ -4796,12 +5794,24 @@ index df43c93..0b81efa 100644
      applyStateUpdate(this.state, pu);
      // applyStateUpdate refreshes outgoingEmojis every tick; re-apply the
      // "Disable emojis" setting so live emojis stay hidden when it's off (#4430).
+diff --git a/src/server/ConfigPatch.ts b/src/server/ConfigPatch.ts
+index 5b22845..5e4007e 100644
+--- a/src/server/ConfigPatch.ts
++++ b/src/server/ConfigPatch.ts
+@@ -29,6 +29,7 @@ const COPIED_KEYS = [
+   "allowedPublicIds",
+   "trusted",
+   "doomsdayClock",
++  "mods",
+   "overtime",
+   "anonymizeNames",
+   "nameReveals",
 diff --git a/tests/AirPowerMod.test.ts b/tests/AirPowerMod.test.ts
 new file mode 100644
-index 0000000..8406cf3
+index 0000000..238c0d4
 --- /dev/null
 +++ b/tests/AirPowerMod.test.ts
-@@ -0,0 +1,1212 @@
+@@ -0,0 +1,1460 @@
 +import {
 +  PlayerInfo,
 +  PlayerType,
@@ -4820,6 +5830,24 @@ index 0000000..8406cf3
 +import { PlayerExecution } from "@openfront/engine/execution/PlayerExecution";
 +import { SAMLauncherExecution } from "@openfront/engine/execution/SAMLauncherExecution";
 +import { ConstructionExecution } from "@openfront/engine/execution/ConstructionExecution";
++import {
++  PIRATE_LOOT_TRADE_DISTANCE,
++  PIRATE_SPEED_MULTIPLIER,
++  PirateExecution,
++} from "@openfront/engine/execution/PirateExecution";
++import {
++  COLLAPSE_MIN_SPAWN_INTERVAL,
++  CollapseExecution,
++  collapseSpawnInterval,
++  collapseStrength,
++} from "@openfront/engine/execution/CollapseExecution";
++import { EngineConfig } from "@openfront/engine/configuration/EngineConfig";
++import { GameConfig } from "@openfront/engine-api/Schemas";
++import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
++import { NationAllianceBehavior } from "@openfront/engine/execution/nation/NationAllianceBehavior";
++import { NationAttackBehavior } from "@openfront/engine/execution/nation/NationAttackBehavior";
++import { NationEmojiBehavior } from "@openfront/engine/execution/nation/NationEmojiBehavior";
++import { NationWarshipBehavior } from "@openfront/engine/execution/nation/NationWarshipBehavior";
 +import { NationModBehavior } from "@openfront/engine/execution/nation/NationModBehavior";
 +import { BioZoneExecution } from "@openfront/engine/execution/BioZoneExecution";
 +import {
@@ -6014,6 +7042,236 @@ index 0000000..8406cf3
 +    expect(n.units(UnitType.Metropolis).length).toBeGreaterThan(0);
 +  });
 +});
++
++describe("Pirate ship", () => {
++  const coastX = 7; // 이 지도: 16x16, x<8은 땅, x>=8은 바다
++  async function sea() {
++    const g = await setup("half_land_half_ocean", { instantBuild: true }, [
++      new PlayerInfo("pirate", PlayerType.Human, null, "pir"),
++      new PlayerInfo("victim", PlayerType.Human, null, "vic"),
++    ]);
++    const pir = g.player("pir");
++    const vic = g.player("vic");
++    pir.addGold(100_000_000n);
++    executeTicks(g, 50);
++    return { g, pir, vic };
++  }
++
++  test("2M fixed, fragile, built from a port like a warship", async () => {
++    const { g, pir } = await sea();
++    expect(g.config().unitInfo(UnitType.PirateShip).cost(g, pir)).toBe(
++      2_000_000n,
++    );
++    expect(g.config().unitInfo(UnitType.PirateShip).maxHealth).toBeLessThan(
++      g.config().unitInfo(UnitType.Warship).maxHealth as number,
++    );
++    pir.conquer(g.ref(coastX - 1, 10)); // 살아 있는 나라여야 건설할 수 있다
++    pir.buildUnit(UnitType.Port, g.ref(coastX, 10), {});
++    expect(pir.canBuild(UnitType.PirateShip, g.ref(coastX + 3, 10))).not.toBe(
++      false,
++    );
++  });
++
++  test("steals a trade ship's gold, the ship disappears, gold arrives at our port", async () => {
++    const { g, pir, vic } = await sea();
++    const port = pir.buildUnit(UnitType.Port, g.ref(coastX, 10), {});
++    const vicPort = vic.buildUnit(UnitType.Port, g.ref(coastX, 3), {});
++    const ship = pir.buildUnit(UnitType.PirateShip, g.ref(coastX + 2, 12), {});
++    g.addExecution(new PirateExecution(ship));
++    const trade = vic.buildUnit(UnitType.TradeShip, g.ref(coastX + 4, 14), {
++      targetUnit: vicPort,
++    });
++    const before = pir.gold();
++    const loot = g.config().tradeShipGold(PIRATE_LOOT_TRADE_DISTANCE, pir);
++
++    executeTicks(g, 30);
++    expect(trade.isActive()).toBe(false); // 무역선은 털리고 사라진다
++    expect(vic.gold()).toBeLessThan(before); // (피해자는 돈을 못 받는다)
++    // 돈은 항구에 도착해야 들어온다
++    let guard = 0;
++    while (pir.gold() === before && guard++ < 200) executeTicks(g, 1);
++    expect(pir.gold() - before).toBe(loot);
++    expect(pir.piracyGold()).toBe(loot);
++    void port;
++  });
++
++  test("moves 1.8x faster than a warship and ignores its own and allied trade ships", async () => {
++    expect(PIRATE_SPEED_MULTIPLIER).toBe(1.8);
++    const { g, pir } = await sea();
++    pir.buildUnit(UnitType.Port, g.ref(coastX, 10), {});
++    const ship = pir.buildUnit(UnitType.PirateShip, g.ref(coastX + 2, 12), {});
++    g.addExecution(new PirateExecution(ship));
++    const own = pir.buildUnit(UnitType.TradeShip, g.ref(coastX + 4, 14), {
++      targetUnit: pir.buildUnit(UnitType.Port, g.ref(coastX, 2), {}),
++    });
++    executeTicks(g, 30);
++    expect(own.isActive()).toBe(true); // 자기 무역선은 건드리지 않는다
++  });
++
++  test("a pirate with no target waits instead of wandering", async () => {
++    const { g, pir } = await sea();
++    pir.buildUnit(UnitType.Port, g.ref(coastX, 10), {});
++    const ship = pir.buildUnit(UnitType.PirateShip, g.ref(coastX + 2, 12), {});
++    g.addExecution(new PirateExecution(ship));
++    const start = ship.tile();
++    executeTicks(g, 20);
++    expect(ship.tile()).toBe(start);
++  });
++});
++
++describe("Nation AI builds pirate ships", () => {
++  test("a nation with a port and gold builds pirate ships (max 2)", async () => {
++    const g = await setup("half_land_half_ocean", { instantBuild: true }, [
++      new PlayerInfo("n", PlayerType.Nation, null, "n"),
++    ]);
++    const n = g.player("n");
++    for (let x = 0; x < 8; x++)
++      for (let y = 0; y < 16; y++) n.conquer(g.ref(x, y));
++    n.buildUnit(UnitType.Port, g.ref(7, 8), {});
++    n.addGold(1_000_000_000n);
++    executeTicks(g, 50);
++    const ai = new NationModBehavior(g, n);
++    for (let i = 0; i < 60; i++) {
++      ai.think();
++      executeTicks(g, 3);
++    }
++    expect(n.units(UnitType.PirateShip).length).toBe(2);
++  });
++});
++
++describe("Collapse mode", () => {
++  async function start() {
++    const g = await setup("plains", { mods: { collapse: true } } as never, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++      new PlayerInfo("n1", PlayerType.Nation, null, "n1"),
++      new PlayerInfo("n2", PlayerType.Nation, null, "n2"),
++    ]);
++    const a = g.player("a");
++    const n1 = g.player("n1");
++    const n2 = g.player("n2");
++    // 각자 작은 시작 땅 (서로 멀리)
++    const seeds: [Player, number, number][] = [
++      [a, 10, 10],
++      [n1, 80, 10],
++      [n2, 45, 80],
++    ];
++    for (const [p, sx, sy] of seeds)
++      for (let x = sx; x < sx + 3; x++)
++        for (let y = sy; y < sy + 3; y++) p.conquer(g.ref(x, y));
++    return { g, a, n1, n2 };
++  }
++
++  test("the mode flag is read from the game config", async () => {
++    const { g } = await start();
++    expect(g.config().collapseMode()).toBe(true);
++    const plain = await setup("plains", {}, [
++      new PlayerInfo("a", PlayerType.Human, null, "a"),
++    ]);
++    expect(plain.config().collapseMode()).toBe(false);
++  });
++
++  test("everyone starts as a big empire without infinite troops", async () => {
++    const { g, a, n1, n2 } = await start();
++    expect(g.config().infiniteTroops()).toBe(false);
++    g.addExecution(new CollapseExecution("collapse-test"));
++    executeTicks(g, 3);
++    for (const p of [a, n1, n2]) {
++      expect(p.numTilesOwned()).toBeGreaterThan(1000);
++      expect(p.troops()).toBeGreaterThan(0);
++      expect(p.troops()).toBeLessThanOrEqual(g.config().maxTroops(p));
++    }
++    // 세 제국이 비슷한 크기로 시작한다
++    const sizes = [a, n1, n2].map((p) => p.numTilesOwned());
++    expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThan(
++      sizes[0] * 0.2,
++    );
++  });
++
++  test("2 minute grace period, then small nations keep appearing, stronger over time", async () => {
++    const { g } = await start();
++    g.addExecution(new CollapseExecution("collapse-test"));
++    executeTicks(g, 3);
++    // (테스트용 설정은 스폰 보호 시간을 0으로 고정하므로 실제 2분 보호는 Config.spawnImmunityDuration()에서 처리한다)
++    const smalls = () =>
++      g.allPlayers().filter((p) => p.type() === PlayerType.Bot).length;
++    executeTicks(g, 1000); // 아직 2분이 안 지남
++    expect(smalls()).toBe(0);
++    executeTicks(g, 400); // 2분 지남 + 약간
++    const early = smalls();
++    expect(early).toBeGreaterThanOrEqual(1);
++    executeTicks(g, 3000); // 5분 정도 더
++    expect(smalls()).toBeGreaterThan(early + 3);
++  });
++
++  test("strength rises and the spawn gap shrinks as time goes on", () => {
++    expect(collapseStrength(0)).toBe(1);
++    expect(collapseStrength(10)).toBeGreaterThan(collapseStrength(2));
++    expect(collapseSpawnInterval(0)).toBeGreaterThan(collapseSpawnInterval(5));
++    expect(collapseSpawnInterval(100)).toBe(COLLAPSE_MIN_SPAWN_INTERVAL);
++  });
++});
++
++describe("Mod switches in the real config", () => {
++  test("collapse mode gives a 2 minute attack-free start; other modes default to off", () => {
++    const off = new EngineConfig({} as unknown as GameConfig, false);
++    expect(off.collapseMode()).toBe(false);
++    expect(off.fogOfWarMode()).toBe(false);
++    expect(off.regionsMode()).toBe(false);
++
++    const on = new EngineConfig(
++      { mods: { collapse: true } } as unknown as GameConfig,
++      false,
++    );
++    expect(on.collapseMode()).toBe(true);
++    expect(on.spawnImmunityDuration()).toBeGreaterThanOrEqual(1200);
++    expect(on.nationSpawnImmunityDuration()).toBeGreaterThanOrEqual(1200);
++    // 켜지 않으면 기본값 그대로
++    expect(off.spawnImmunityDuration()).toBeLessThan(1200);
++  });
++});
++
++describe("Collapse mode: friendlier nations", () => {
++  async function pair(collapse: boolean) {
++    const g = await setup(
++      "plains",
++      collapse ? ({ mods: { collapse: true } } as never) : {},
++      [
++        new PlayerInfo("n", PlayerType.Nation, null, "n"),
++        new PlayerInfo("h", PlayerType.Human, null, "h"),
++      ],
++    );
++    const n = g.player("n");
++    const h = g.player("h");
++    const rnd = new PseudoRandom(7);
++    const emoji = new NationEmojiBehavior(rnd, g, n);
++    const attack = new NationAttackBehavior(
++      rnd,
++      g,
++      n,
++      0.5,
++      0.5,
++      0.2,
++      new NationAllianceBehavior(rnd, g, n, emoji),
++      emoji,
++      new NationWarshipBehavior(rnd, g, n, emoji),
++    );
++    return { g, n, h, attack };
++  }
++
++  test("nations rarely attack a human in collapse mode, but still attack other nations", async () => {
++    const normal = await pair(false);
++    const col = await pair(true);
++    let normalYes = 0;
++    let colYes = 0;
++    for (let i = 0; i < 600; i++) {
++      if (normal.attack.shouldAttack(normal.h)) normalYes++;
++      if (col.attack.shouldAttack(col.h)) colYes++;
++    }
++    expect(colYes).toBeLessThan(120); // 약 1/12
++    expect(colYes).toBeGreaterThan(10);
++    expect(colYes).toBeLessThan(normalYes);
++  });
++});
 diff --git a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap b/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
 index f817747..22a1bb9 100644
 --- a/tests/__snapshots__/NationGoldPerMinute.test.ts.snap
@@ -6168,7 +7426,7 @@ index f817747..22a1bb9 100644
  }
  `;
 diff --git a/tests/client/PlayerStatsTable.test.ts b/tests/client/PlayerStatsTable.test.ts
-index 223e5e7..39d5eaa 100644
+index 223e5e7..2c6013b 100644
 --- a/tests/client/PlayerStatsTable.test.ts
 +++ b/tests/client/PlayerStatsTable.test.ts
 @@ -168,8 +168,9 @@ describe("PlayerStatsTable", () => {
@@ -6177,17 +7435,17 @@ index 223e5e7..39d5eaa 100644
      expect(buildings, "buildings table should exist").toBeDefined();
 -    // The six structures, with the warship row moved to its own section.
 -    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(6);
-+    // 기본 건물 6개 + 모드로 추가한 6개(벙커, 스카이포트, 탱크, 민간 공항, 대도시, 마을).
++    // 기본 건물 6개 + 모드로 추가한 7개(벙커, 스카이포트, 탱크, 민간 공항, 대도시, 마을, 약탈선).
 +    // 전함 행은 별도 구역으로 빠진다.
-+    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(12);
++    expect(buildings?.querySelectorAll("tbody tr")).toHaveLength(13);
      expect(buildings?.textContent).not.toContain("unit_type.warship");
  
      expect(columnsOf(table, "player_stats_table.warship_stats")).toEqual({
 diff --git a/tests/client/UnitDisplay.test.ts b/tests/client/UnitDisplay.test.ts
-index 8d6dbd8..24af4a7 100644
+index 8d6dbd8..ef6f7a4 100644
 --- a/tests/client/UnitDisplay.test.ts
 +++ b/tests/client/UnitDisplay.test.ts
-@@ -138,7 +138,19 @@ describe("mobile UnitDisplay layout", () => {
+@@ -138,7 +138,20 @@ describe("mobile UnitDisplay layout", () => {
        await display.updateComplete;
  
        const grid = display.querySelector<HTMLElement>(".unit-display-grid");
@@ -6200,6 +7458,7 @@ index 8d6dbd8..24af4a7 100644
 +        UnitType.CivilAirport,
 +        UnitType.Metropolis,
 +        UnitType.Town,
++        UnitType.PirateShip,
 +      ];
 +      const hotbarTypes = BuildMenus.types.filter(
 +        (t) => !(modOnly as UnitType[]).includes(t),
@@ -6209,10 +7468,10 @@ index 8d6dbd8..24af4a7 100644
        display.remove();
      }
 diff --git a/tests/core/snapshot/FullGameSnapshot.test.ts b/tests/core/snapshot/FullGameSnapshot.test.ts
-index c561d5e..4d2679f 100644
+index c561d5e..afede9f 100644
 --- a/tests/core/snapshot/FullGameSnapshot.test.ts
 +++ b/tests/core/snapshot/FullGameSnapshot.test.ts
-@@ -196,7 +196,19 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
+@@ -196,7 +196,21 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
        if (Object.keys(overrides).length > 0) return; // checked once, on FFA
        // Runs during the spawn phase and finishes inside init, so it is never
        // alive at a tick boundary. BasicExecutions.test.ts covers it directly.
@@ -6223,6 +7482,8 @@ index c561d5e..4d2679f 100644
 +        "Bunker",
 +        "Airfield",
 +        "Airlift",
++        "Pirate",
++        "Collapse",
 +        "Tank",
 +        "ModUpgrade",
 +        "ModEquip",
